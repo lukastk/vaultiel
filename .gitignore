@@ -1,0 +1,12 @@
+# Rust
+vaultiel-rs/target/
+
+# Node (for future TypeScript bindings)
+node_modules/
+vaultiel-ts/dist/
+
+# Python (for future Python bindings)
+__pycache__/
+*.pyc
+vaultiel-py/.venv/
+*.egg-info/
