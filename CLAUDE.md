@@ -12,9 +12,26 @@ vaultiel/
 ├── PROJECT_PLAN.md       # Implementation roadmap
 ├── CLAUDE.md             # This file
 ├── phase_plans/          # Detailed plans for each phase
+│   └── 01_core_cli.md
+├── fixtures/             # Shared test vaults (used by all language bindings)
+│   ├── minimal/          # Single basic note
+│   ├── links/            # Notes with links, aliases, embeds, orphans
+│   ├── unicode/          # Japanese and emoji filenames/content
+│   └── frontmatter/      # Various frontmatter structures
 ├── vaultiel-rs/          # Rust core library + CLI
 │   ├── Cargo.toml
-│   └── src/
+│   ├── src/
+│   │   ├── main.rs       # CLI entry point
+│   │   ├── lib.rs        # Library exports
+│   │   ├── cli/          # CLI command implementations
+│   │   ├── parser/       # Parsing logic (frontmatter, wikilinks, tags, etc.)
+│   │   ├── vault.rs      # Vault operations
+│   │   ├── note.rs       # Note struct and methods
+│   │   ├── config.rs     # Config file loading
+│   │   ├── error.rs      # Error types and exit codes
+│   │   └── types.rs      # Shared types (Link, Tag, etc.)
+│   └── tests/            # Rust integration tests
+│       └── integration_test.rs
 ├── vaultiel-ts/          # (Future) TypeScript bindings
 └── vaultiel-py/          # (Future) Python bindings
 ```
@@ -71,6 +88,14 @@ If there is any ambiguity in instructions or specifications, **ask clarifying qu
 
 ### Testing
 
-- Write unit tests for parsers (frontmatter, wikilinks, tasks, etc.)
-- Use fixture vaults for integration tests
+- **Unit tests**: Inline in source files with `#[cfg(test)]` modules
+- **Integration tests**: In `vaultiel-rs/tests/`, using fixture vaults from `fixtures/`
+- **Fixture vaults**: Shared across all language bindings in `fixtures/` at repo root
 - Test edge cases: unicode, empty files, malformed frontmatter, deeply nested structures
+
+Run tests:
+```bash
+cargo test --manifest-path vaultiel-rs/Cargo.toml           # All tests
+cargo test --manifest-path vaultiel-rs/Cargo.toml parser    # Parser tests only
+cargo test --manifest-path vaultiel-rs/Cargo.toml --test integration_test  # Integration tests
+```
