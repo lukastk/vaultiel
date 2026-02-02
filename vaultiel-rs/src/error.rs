@@ -66,6 +66,9 @@ pub enum VaultError {
     #[error("Section not found: {0}")]
     SectionNotFound(String),
 
+    #[error("Heading not found in {note}: {heading}")]
+    HeadingNotFound { note: PathBuf, heading: String },
+
     #[error("Block not found: {0}")]
     BlockNotFound(String),
 
@@ -94,3 +97,30 @@ impl VaultError {
 
 /// Result type alias for Vaultiel operations.
 pub type Result<T> = std::result::Result<T, VaultError>;
+
+/// Exit code for CLI operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitCode {
+    Success,
+    GeneralError,
+    NoteNotFound,
+    NoteAlreadyExists,
+    AmbiguousResolution,
+    InvalidFrontmatter,
+    LintIssuesFound,
+}
+
+impl ExitCode {
+    /// Convert to exit code integer.
+    pub fn code(self) -> i32 {
+        match self {
+            ExitCode::Success => exit_code::SUCCESS,
+            ExitCode::GeneralError => exit_code::GENERAL_ERROR,
+            ExitCode::NoteNotFound => exit_code::NOTE_NOT_FOUND,
+            ExitCode::NoteAlreadyExists => exit_code::NOTE_ALREADY_EXISTS,
+            ExitCode::AmbiguousResolution => exit_code::AMBIGUOUS_RESOLUTION,
+            ExitCode::InvalidFrontmatter => exit_code::INVALID_FRONTMATTER,
+            ExitCode::LintIssuesFound => exit_code::LINT_ISSUES_FOUND,
+        }
+    }
+}

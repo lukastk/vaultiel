@@ -152,3 +152,264 @@ mod resolve_command {
         assert!(stdout.contains("Hub.md"));
     }
 }
+
+// Phase 2: Links, Tags & Blocks
+
+mod get_links_command {
+    use super::*;
+
+    #[test]
+    fn get_links_hub() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-links", "Hub"]);
+        assert_eq!(code, 0);
+        // Hub has incoming link from Page A and Page B
+        assert!(stdout.contains("\"incoming\""));
+        assert!(stdout.contains("\"outgoing\""));
+        // Check outgoing links exist
+        assert!(stdout.contains("Page A"));
+        assert!(stdout.contains("Page B"));
+    }
+
+    #[test]
+    fn get_in_links() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-in-links", "Hub"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"incoming\""));
+        // Page A and Page B both link to Hub
+        assert!(stdout.contains("Page A.md"));
+    }
+
+    #[test]
+    fn get_out_links() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-out-links", "Hub"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"outgoing\""));
+        // Hub links to Page A, Page B, and embeds
+        assert!(stdout.contains("Page A"));
+        assert!(stdout.contains("Page B"));
+    }
+
+    #[test]
+    fn get_out_links_embeds_only() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-out-links", "Hub", "--embeds-only"]);
+        assert_eq!(code, 0);
+        // Should only show embeds (Embedded Note and image.png)
+        assert!(stdout.contains("Embedded Note"));
+        // Should not contain non-embed links
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let outgoing = json["outgoing"].as_array().unwrap();
+        for link in outgoing {
+            assert!(link["embed"].as_bool().unwrap());
+        }
+    }
+}
+
+mod get_embeds_command {
+    use super::*;
+
+    #[test]
+    fn get_embeds() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-embeds", "Hub"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"embeds\""));
+        assert!(stdout.contains("Embedded Note"));
+        assert!(stdout.contains("image.png"));
+    }
+
+    #[test]
+    fn get_embeds_media_only() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-embeds", "Hub", "--media-only"]);
+        assert_eq!(code, 0);
+        // Should only contain image embed
+        assert!(stdout.contains("image.png"));
+        assert!(!stdout.contains("Embedded Note"));
+    }
+
+    #[test]
+    fn get_embeds_notes_only() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-embeds", "Hub", "--notes-only"]);
+        assert_eq!(code, 0);
+        // Should only contain note embed
+        assert!(stdout.contains("Embedded Note"));
+        assert!(!stdout.contains("image.png"));
+    }
+}
+
+mod get_tags_command {
+    use super::*;
+
+    #[test]
+    fn get_tags_from_note() {
+        let (stdout, _, code) = run_vaultiel("minimal", &["get-tags", "Note"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"tags\""));
+        assert!(stdout.contains("#tag"));
+    }
+
+    #[test]
+    fn get_tags_vault_wide() {
+        let (stdout, _, code) = run_vaultiel("minimal", &["get-tags"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"tags\""));
+    }
+
+    #[test]
+    fn get_tags_with_counts() {
+        let (stdout, _, code) = run_vaultiel("minimal", &["get-tags", "--with-counts"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"count\""));
+    }
+}
+
+mod get_blocks_command {
+    use super::*;
+
+    #[test]
+    fn get_blocks_from_note() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-blocks", "Page A"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"blocks\""));
+        assert!(stdout.contains("block-a1"));
+    }
+
+    #[test]
+    fn get_blocks_no_blocks() {
+        let (stdout, _, code) = run_vaultiel("minimal", &["get-blocks", "Note"]);
+        assert_eq!(code, 0);
+        // Should return empty blocks array
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert!(json["blocks"].as_array().unwrap().is_empty());
+    }
+}
+
+mod get_headings_command {
+    use super::*;
+
+    #[test]
+    fn get_headings_flat() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-headings", "Hub"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"headings\""));
+        assert!(stdout.contains("Hub Note"));
+        assert!(stdout.contains("Section One"));
+        assert!(stdout.contains("Section Two"));
+    }
+
+    #[test]
+    fn get_headings_nested() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-headings", "Hub", "--nested"]);
+        assert_eq!(code, 0);
+        // With nested output, Section One and Two should be under Hub Note
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let top_level = json["headings"].as_array().unwrap();
+        assert_eq!(top_level.len(), 1); // Hub Note at top level
+        assert_eq!(top_level[0]["text"], "Hub Note");
+        assert!(top_level[0]["children"].as_array().unwrap().len() >= 2);
+    }
+
+    #[test]
+    fn get_headings_level_filter() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-headings", "Hub", "--min-level", "2"]);
+        assert_eq!(code, 0);
+        // Should not contain H1 (Hub Note)
+        assert!(!stdout.contains("Hub Note"));
+        // Should contain H2s
+        assert!(stdout.contains("Section One"));
+    }
+}
+
+mod get_section_command {
+    use super::*;
+
+    #[test]
+    fn get_section_by_text() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-section", "Hub", "Section One"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("Section One"));
+        assert!(stdout.contains("Content in section one"));
+    }
+
+    #[test]
+    fn get_section_content_only() {
+        let (stdout, _, code) = run_vaultiel("links", &["get-section", "Hub", "Section One", "--content-only"]);
+        assert_eq!(code, 0);
+        // Content should not start with the heading
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let content = json["content"].as_str().unwrap();
+        assert!(!content.starts_with("##"));
+        assert!(content.contains("Content in section one"));
+    }
+
+    #[test]
+    fn get_section_not_found() {
+        let (_, stderr, code) = run_vaultiel("links", &["get-section", "Hub", "NonExistent"]);
+        assert_eq!(code, 1); // GENERAL_ERROR exit code (HeadingNotFound)
+        assert!(stderr.contains("not found"));
+    }
+}
+
+mod rename_command {
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn setup_temp_vault() -> TempDir {
+        let temp = TempDir::new().unwrap();
+        let vault_path = temp.path();
+
+        // Create a simple vault structure
+        fs::write(vault_path.join("Source.md"), "# Source\n\nThis is the source note.").unwrap();
+        fs::write(vault_path.join("Linker.md"), "# Linker\n\nThis links to [[Source]].").unwrap();
+
+        temp
+    }
+
+    #[test]
+    fn rename_dry_run() {
+        let temp = setup_temp_vault();
+        let binary = env!("CARGO_BIN_EXE_vaultiel");
+
+        let output = std::process::Command::new(binary)
+            .arg("--vault")
+            .arg(temp.path())
+            .args(["rename", "Source", "Target", "--dry-run"])
+            .output()
+            .expect("Failed to execute vaultiel");
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let code = output.status.code().unwrap_or(-1);
+
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"action\": \"rename\""));
+        assert!(stdout.contains("Source.md"));
+        assert!(stdout.contains("Target.md"));
+        assert!(stdout.contains("would_update"));
+
+        // Verify file wasn't actually renamed
+        assert!(temp.path().join("Source.md").exists());
+        assert!(!temp.path().join("Target.md").exists());
+    }
+
+    #[test]
+    fn rename_no_propagate() {
+        let temp = setup_temp_vault();
+        let binary = env!("CARGO_BIN_EXE_vaultiel");
+
+        let output = std::process::Command::new(binary)
+            .arg("--vault")
+            .arg(temp.path())
+            .args(["rename", "Source", "Target", "--no-propagate"])
+            .output()
+            .expect("Failed to execute vaultiel");
+
+        let code = output.status.code().unwrap_or(-1);
+        assert_eq!(code, 0);
+
+        // Verify file was renamed
+        assert!(!temp.path().join("Source.md").exists());
+        assert!(temp.path().join("Target.md").exists());
+
+        // Verify Linker still has old link (no propagation)
+        let linker_content = fs::read_to_string(temp.path().join("Linker.md")).unwrap();
+        assert!(linker_content.contains("[[Source]]"));
+    }
+}

@@ -61,42 +61,42 @@ Foundation for all other features. Get basic note operations working.
 Build the graph structure and traversal capabilities.
 
 ### Link Graph
-- [ ] Build in-memory link graph from vault
-- [ ] Track link context (body, frontmatter key, inline attribute, task)
-- [ ] Track link metadata (alias, heading, block_id, embed flag)
-- [ ] Incoming link resolution (which notes link to this note)
+- [x] Build in-memory link graph from vault
+- [x] Track link context (body, frontmatter key, inline attribute, task)
+- [x] Track link metadata (alias, heading, block_id, embed flag)
+- [x] Incoming link resolution (which notes link to this note)
 
 ### Commands: Link Operations
-- [ ] `get-links` - Get incoming and outgoing links
-- [ ] `get-in-links` - Incoming links only
-- [ ] `get-out-links` - Outgoing links only
-- [ ] `get-links` - Context filtering (`--context`)
-- [ ] `get-links` - Embed filtering (`--embeds-only`, `--no-embeds`, `--media-only`)
-- [ ] `get-embeds` - Shorthand for embed listing
+- [x] `get-links` - Get incoming and outgoing links
+- [x] `get-in-links` - Incoming links only
+- [x] `get-out-links` - Outgoing links only
+- [x] `get-links` - Context filtering (`--context`)
+- [x] `get-links` - Embed filtering (`--embeds-only`, `--no-embeds`, `--media-only`)
+- [x] `get-embeds` - Shorthand for embed listing
 
 ### Commands: Tag Operations
-- [ ] `get-tags` - Tags from specific note (with line/context)
-- [ ] `get-tags` - All tags in vault
-- [ ] `get-tags` - With counts (`--with-counts`)
-- [ ] `get-tags` - Nested hierarchy output (`--nested`)
+- [x] `get-tags` - Tags from specific note (with line/context)
+- [x] `get-tags` - All tags in vault
+- [x] `get-tags` - With counts (`--with-counts`)
+- [x] `get-tags` - Nested hierarchy output (`--nested`)
 - [ ] `search` - Tag filtering (`--tag`, `--tag-any`, `--no-tag`)
 
 ### Commands: Block Operations
-- [ ] `get-blocks` - List block IDs in a note
-- [ ] `get-block-refs` - Find references to a note's blocks
+- [x] `get-blocks` - List block IDs in a note
+- [x] `get-block-refs` - Find references to a note's blocks
 
 ### Commands: Heading Operations
-- [ ] `get-headings` - List headings (flat)
-- [ ] `get-headings` - Nested hierarchy (`--nested`)
-- [ ] `get-headings` - Level filtering (`--min-level`, `--max-level`)
-- [ ] `get-section` - Extract section content
+- [x] `get-headings` - List headings (flat)
+- [x] `get-headings` - Nested hierarchy (`--nested`)
+- [x] `get-headings` - Level filtering (`--min-level`, `--max-level`)
+- [x] `get-section` - Extract section content
 
 ### Commands: Rename with Propagation
-- [ ] `rename` - Rename note file
-- [ ] `rename` - Update all incoming links throughout vault
-- [ ] `rename` - Handle heading/block references in links
-- [ ] `rename` - `--no-propagate` mode (just mv)
-- [ ] `rename` - `--dry-run` mode
+- [x] `rename` - Rename note file
+- [x] `rename` - Update all incoming links throughout vault
+- [x] `rename` - Handle heading/block references in links
+- [x] `rename` - `--no-propagate` mode (just mv)
+- [x] `rename` - `--dry-run` mode
 - [ ] `rename-frontmatter` - Rename key across notes
 
 ---

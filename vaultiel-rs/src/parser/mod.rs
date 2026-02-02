@@ -14,7 +14,7 @@ pub use frontmatter::{
     extract_frontmatter, parse_frontmatter, parse_frontmatter_with_path,
     serialize_frontmatter, split_frontmatter, update_frontmatter,
 };
-pub use heading::{parse_headings, slugify};
+pub use heading::{find_heading_by_slug, find_heading_by_text, parse_headings, slugify};
 pub use inline_attr::parse_inline_attrs;
 pub use tag::parse_tags;
 pub use wikilink::{parse_all_links, parse_embeds, parse_links};

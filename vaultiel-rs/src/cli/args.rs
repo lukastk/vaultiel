@@ -107,6 +107,47 @@ pub enum Commands {
     /// Remove a frontmatter field
     #[command(name = "remove-frontmatter")]
     RemoveFrontmatter(RemoveFrontmatterArgs),
+
+    // === Phase 2: Links, Tags, Blocks ===
+
+    /// Get all links (incoming and outgoing) for a note
+    #[command(name = "get-links")]
+    GetLinks(GetLinksArgs),
+
+    /// Get incoming links to a note
+    #[command(name = "get-in-links")]
+    GetInLinks(GetLinksArgs),
+
+    /// Get outgoing links from a note
+    #[command(name = "get-out-links")]
+    GetOutLinks(GetLinksArgs),
+
+    /// Get embeds in a note
+    #[command(name = "get-embeds")]
+    GetEmbeds(GetEmbedsArgs),
+
+    /// Get tags from a note or vault
+    #[command(name = "get-tags")]
+    GetTags(GetTagsArgs),
+
+    /// Get block IDs in a note
+    #[command(name = "get-blocks")]
+    GetBlocks(GetBlocksArgs),
+
+    /// Get references to blocks in a note
+    #[command(name = "get-block-refs")]
+    GetBlockRefs(GetBlockRefsArgs),
+
+    /// Get headings in a note
+    #[command(name = "get-headings")]
+    GetHeadings(GetHeadingsArgs),
+
+    /// Get section content from a note
+    #[command(name = "get-section")]
+    GetSection(GetSectionArgs),
+
+    /// Rename a note with link propagation
+    Rename(RenameArgs),
 }
 
 // === List ===
@@ -430,6 +471,142 @@ pub struct RemoveFrontmatterArgs {
     /// Key to remove
     #[arg(short, long)]
     pub key: String,
+
+    /// Show what would change without writing
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+// === Link Operations ===
+
+#[derive(Parser, Debug)]
+pub struct GetLinksArgs {
+    /// Path to the note
+    pub path: String,
+
+    /// Filter by context (supports wildcards, e.g., "frontmatter:*")
+    #[arg(long)]
+    pub context: Option<String>,
+
+    /// Only show embeds
+    #[arg(long)]
+    pub embeds_only: bool,
+
+    /// Exclude embeds
+    #[arg(long)]
+    pub no_embeds: bool,
+
+    /// Only media embeds (images, audio, video, PDF)
+    #[arg(long)]
+    pub media_only: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct GetEmbedsArgs {
+    /// Path to the note
+    pub path: String,
+
+    /// Only media embeds (images, audio, video, PDF)
+    #[arg(long)]
+    pub media_only: bool,
+
+    /// Only note embeds
+    #[arg(long)]
+    pub notes_only: bool,
+}
+
+// === Tag Operations ===
+
+#[derive(Parser, Debug)]
+pub struct GetTagsArgs {
+    /// Path to a specific note (omit for vault-wide)
+    pub path: Option<String>,
+
+    /// Include usage counts
+    #[arg(long)]
+    pub with_counts: bool,
+
+    /// Return as nested hierarchy
+    #[arg(long)]
+    pub nested: bool,
+
+    /// Filter to notes matching glob pattern
+    #[arg(long)]
+    pub glob: Option<String>,
+}
+
+// === Block Operations ===
+
+#[derive(Parser, Debug)]
+pub struct GetBlocksArgs {
+    /// Path to the note
+    pub path: String,
+}
+
+#[derive(Parser, Debug)]
+pub struct GetBlockRefsArgs {
+    /// Path to the note
+    pub path: String,
+}
+
+// === Heading Operations ===
+
+#[derive(Parser, Debug)]
+pub struct GetHeadingsArgs {
+    /// Path to the note
+    pub path: String,
+
+    /// Minimum heading level (1-6)
+    #[arg(long)]
+    pub min_level: Option<u8>,
+
+    /// Maximum heading level (1-6)
+    #[arg(long)]
+    pub max_level: Option<u8>,
+
+    /// Return as nested hierarchy
+    #[arg(long)]
+    pub nested: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct GetSectionArgs {
+    /// Path to the note
+    pub path: String,
+
+    /// Heading to find (e.g., "## Configuration" or just "Configuration")
+    pub heading: String,
+
+    /// Find heading by slug instead of text
+    #[arg(long)]
+    pub by_slug: bool,
+
+    /// Include subheadings in output (default: true)
+    #[arg(long, default_value = "true")]
+    pub include_subheadings: bool,
+
+    /// Exclude subheadings
+    #[arg(long)]
+    pub exclude_subheadings: bool,
+
+    /// Exclude the heading line itself
+    #[arg(long)]
+    pub content_only: bool,
+}
+
+// === Rename Operations ===
+
+#[derive(Parser, Debug)]
+pub struct RenameArgs {
+    /// Current note path
+    pub from: String,
+
+    /// New note path
+    pub to: String,
+
+    /// Don't update links in other notes
+    #[arg(long)]
+    pub no_propagate: bool,
 
     /// Show what would change without writing
     #[arg(long)]
