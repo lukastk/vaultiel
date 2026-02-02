@@ -14,6 +14,7 @@ pub mod info;
 pub mod links;
 pub mod lint;
 pub mod list;
+pub mod metadata;
 pub mod rename;
 pub mod resolve;
 pub mod search;

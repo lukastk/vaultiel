@@ -4,7 +4,7 @@ use clap::Parser;
 use std::process::ExitCode;
 use vaultiel::cli::args::{Cli, Commands, CacheCommands};
 use vaultiel::cli::output::Output;
-use vaultiel::cli::{blocks, cache, content, create, delete, frontmatter, headings, info, links, lint, list, rename, resolve, search, tags, tasks};
+use vaultiel::cli::{blocks, cache, content, create, delete, frontmatter, headings, info, links, lint, list, metadata, rename, resolve, search, tags, tasks};
 use vaultiel::cli::lint::LintFormat;
 use vaultiel::types::Priority;
 use vaultiel::config::Config;
@@ -239,6 +239,25 @@ fn run(cli: &Cli) -> Result<VaultExitCode, VaultError> {
                 }
                 CacheCommands::Clear => cache::clear(&vault, &output),
             }
+        }
+
+        // Phase 6 commands
+        Commands::InitMetadata(args) => {
+            if let Some(ref glob_pattern) = args.glob {
+                metadata::init_metadata_glob(&vault, glob_pattern, args.force, args.dry_run, &output)
+            } else if let Some(ref path) = args.path {
+                metadata::init_metadata_note(&vault, path, args.force, args.dry_run, &output)
+            } else {
+                Err(vaultiel::error::VaultError::Other(
+                    "Either a note path or --glob pattern is required".to_string(),
+                ))
+            }
+        }
+        Commands::GetById(args) => {
+            metadata::get_by_id(&vault, &args.id, &output)
+        }
+        Commands::GetMetadata(args) => {
+            metadata::get_note_metadata(&vault, &args.path, &output)
         }
     }
 }

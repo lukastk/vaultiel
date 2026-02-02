@@ -179,6 +179,20 @@ pub enum Commands {
 
     /// Cache management commands
     Cache(CacheArgs),
+
+    // === Phase 6: Metadata & IDs ===
+
+    /// Initialize vaultiel metadata for notes
+    #[command(name = "init-metadata")]
+    InitMetadata(InitMetadataArgs),
+
+    /// Find a note by its vaultiel ID
+    #[command(name = "get-by-id")]
+    GetById(GetByIdArgs),
+
+    /// Get vaultiel metadata from a note
+    #[command(name = "get-metadata")]
+    GetMetadata(GetMetadataArgs),
 }
 
 // === List ===
@@ -835,4 +849,36 @@ pub struct CacheRebuildArgs {
     /// Show progress during rebuild
     #[arg(long)]
     pub progress: bool,
+}
+
+// === Metadata Operations ===
+
+#[derive(Parser, Debug)]
+pub struct InitMetadataArgs {
+    /// Path to the note (omit to use --glob)
+    pub path: Option<String>,
+
+    /// Initialize metadata for notes matching glob pattern
+    #[arg(long)]
+    pub glob: Option<String>,
+
+    /// Force re-initialization even if metadata exists
+    #[arg(long)]
+    pub force: bool,
+
+    /// Show what would change without writing
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct GetByIdArgs {
+    /// The vaultiel UUID to search for
+    pub id: String,
+}
+
+#[derive(Parser, Debug)]
+pub struct GetMetadataArgs {
+    /// Path to the note
+    pub path: String,
 }

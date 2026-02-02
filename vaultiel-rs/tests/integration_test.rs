@@ -782,3 +782,189 @@ Content with [[test]] link back.
         assert_eq!(json["indexed_notes"], 2);
     }
 }
+
+mod metadata_command {
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn create_temp_vault() -> TempDir {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Note without metadata
+        let note_content = r#"---
+title: Test Note
+tags:
+  - rust
+---
+
+# Test
+
+Content.
+"#;
+        fs::write(temp_dir.path().join("test.md"), note_content).unwrap();
+
+        // Note with existing metadata
+        let note_with_meta = r#"---
+title: With Meta
+vaultiel:
+  id: "existing-uuid-12345"
+  created: "2026-01-01T00:00:00Z"
+---
+
+# With Meta
+
+Content.
+"#;
+        fs::write(temp_dir.path().join("with-meta.md"), note_with_meta).unwrap();
+
+        // Another note
+        let note2 = r#"---
+title: Another
+---
+
+# Another
+
+Content.
+"#;
+        fs::write(temp_dir.path().join("another.md"), note2).unwrap();
+
+        temp_dir
+    }
+
+    fn run_cmd(vault_path: &std::path::Path, args: &[&str]) -> (String, String, i32) {
+        let binary = env!("CARGO_BIN_EXE_vaultiel");
+
+        let output = std::process::Command::new(binary)
+            .arg("--vault")
+            .arg(vault_path)
+            .args(args)
+            .output()
+            .expect("Failed to execute vaultiel");
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let code = output.status.code().unwrap_or(-1);
+
+        (stdout, stderr, code)
+    }
+
+    #[test]
+    fn init_metadata_single() {
+        let temp_vault = create_temp_vault();
+
+        let (stdout, _, code) = run_cmd(temp_vault.path(), &["init-metadata", "test"]);
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(json["action"], "initialized");
+        assert!(json["metadata"]["id"].as_str().is_some());
+    }
+
+    #[test]
+    fn init_metadata_skips_existing() {
+        let temp_vault = create_temp_vault();
+
+        let (stdout, _, code) = run_cmd(temp_vault.path(), &["init-metadata", "with-meta"]);
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(json["action"], "skipped");
+        assert_eq!(json["metadata"]["id"], "existing-uuid-12345");
+    }
+
+    #[test]
+    fn init_metadata_force() {
+        let temp_vault = create_temp_vault();
+
+        let (stdout, _, code) = run_cmd(
+            temp_vault.path(),
+            &["init-metadata", "with-meta", "--force"],
+        );
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(json["action"], "initialized");
+        // New UUID should be different
+        assert_ne!(json["metadata"]["id"], "existing-uuid-12345");
+    }
+
+    #[test]
+    fn init_metadata_glob() {
+        let temp_vault = create_temp_vault();
+
+        let (stdout, _, code) = run_cmd(temp_vault.path(), &["init-metadata", "--glob", "*.md"]);
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(json["total"], 3);
+        // with-meta should be skipped, others initialized
+        assert_eq!(json["initialized"], 2);
+        assert_eq!(json["skipped"], 1);
+    }
+
+    #[test]
+    fn init_metadata_dry_run() {
+        let temp_vault = create_temp_vault();
+
+        let (stdout, _, code) = run_cmd(
+            temp_vault.path(),
+            &["init-metadata", "test", "--dry-run"],
+        );
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(json["action"], "would_initialize");
+
+        // Verify no actual change was made
+        let (stdout2, _, _) = run_cmd(temp_vault.path(), &["get-metadata", "test"]);
+        let json2: serde_json::Value = serde_json::from_str(&stdout2).unwrap();
+        assert!(!json2["has_metadata"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn get_by_id_found() {
+        let temp_vault = create_temp_vault();
+
+        let (stdout, _, code) = run_cmd(temp_vault.path(), &["get-by-id", "existing-uuid-12345"]);
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert!(json["found"].as_bool().unwrap());
+        assert!(json["path"].as_str().unwrap().contains("with-meta"));
+    }
+
+    #[test]
+    fn get_by_id_not_found() {
+        let temp_vault = create_temp_vault();
+
+        let (stdout, _, code) = run_cmd(temp_vault.path(), &["get-by-id", "nonexistent-uuid"]);
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert!(!json["found"].as_bool().unwrap());
+        assert!(json["path"].is_null());
+    }
+
+    #[test]
+    fn get_metadata() {
+        let temp_vault = create_temp_vault();
+
+        let (stdout, _, code) = run_cmd(temp_vault.path(), &["get-metadata", "with-meta"]);
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert!(json["has_metadata"].as_bool().unwrap());
+        assert_eq!(json["metadata"]["id"], "existing-uuid-12345");
+    }
+
+    #[test]
+    fn get_metadata_none() {
+        let temp_vault = create_temp_vault();
+
+        let (stdout, _, code) = run_cmd(temp_vault.path(), &["get-metadata", "test"]);
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert!(!json["has_metadata"].as_bool().unwrap());
+    }
+}

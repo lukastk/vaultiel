@@ -219,14 +219,15 @@ Performance optimization for large vaults.
 Stable identifiers for external integrations.
 
 ### Vaultiel Metadata Field
-- [ ] Define `vaultiel` frontmatter schema
-- [ ] UUID generation
-- [ ] Creation timestamp tracking
+- [x] Define `vaultiel` frontmatter schema
+- [x] UUID generation
+- [x] Creation timestamp tracking
 
 ### Commands
-- [ ] `init-metadata` - Add vaultiel field to a note
-- [ ] `init-metadata --glob` - Batch initialization
-- [ ] `get-by-id` - Find note by UUID
+- [x] `init-metadata` - Add vaultiel field to a note
+- [x] `init-metadata --glob` - Batch initialization
+- [x] `get-by-id` - Find note by UUID
+- [x] `get-metadata` - Get vaultiel metadata from a note
 
 ### Integration
 - [ ] Preserve vaultiel field during operations
