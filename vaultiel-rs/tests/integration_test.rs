@@ -659,3 +659,126 @@ mod find_broken_links_command {
         }
     }
 }
+
+mod cache_command {
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// Create a temp vault for cache tests to avoid modifying fixture vaults.
+    fn create_temp_vault() -> TempDir {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a test note
+        let note_content = r#"---
+title: Test Note
+tags:
+  - rust
+  - cli
+aliases:
+  - my-test
+---
+
+# Test Heading
+
+This is a [[link]] to another note.
+
+- [ ] A task 📅 2026-02-10
+
+Some content with a #tag.
+
+A paragraph with ^block-id
+"#;
+        fs::write(temp_dir.path().join("test.md"), note_content).unwrap();
+
+        // Create another note
+        let note2_content = r#"---
+title: Second Note
+---
+
+# Second
+
+Content with [[test]] link back.
+"#;
+        fs::write(temp_dir.path().join("second.md"), note2_content).unwrap();
+
+        temp_dir
+    }
+
+    fn run_cache_cmd(vault_path: &std::path::Path, args: &[&str]) -> (String, String, i32) {
+        let binary = env!("CARGO_BIN_EXE_vaultiel");
+
+        let output = std::process::Command::new(binary)
+            .arg("--vault")
+            .arg(vault_path)
+            .args(args)
+            .output()
+            .expect("Failed to execute vaultiel");
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let code = output.status.code().unwrap_or(-1);
+
+        (stdout, stderr, code)
+    }
+
+    #[test]
+    fn cache_rebuild() {
+        let temp_vault = create_temp_vault();
+
+        let (stdout, _, code) = run_cache_cmd(temp_vault.path(), &["cache", "rebuild"]);
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(json["indexed_notes"], 2);
+    }
+
+    #[test]
+    fn cache_status() {
+        let temp_vault = create_temp_vault();
+
+        // First rebuild
+        let (_, _, code) = run_cache_cmd(temp_vault.path(), &["cache", "rebuild"]);
+        assert_eq!(code, 0);
+
+        // Then check status
+        let (stdout, _, code) = run_cache_cmd(temp_vault.path(), &["cache", "status"]);
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(json["indexed_notes"], 2);
+        assert!(json["cache_path"].as_str().unwrap().contains("vaultiel"));
+    }
+
+    #[test]
+    fn cache_clear() {
+        let temp_vault = create_temp_vault();
+
+        // First rebuild
+        let (_, _, code) = run_cache_cmd(temp_vault.path(), &["cache", "rebuild"]);
+        assert_eq!(code, 0);
+
+        // Then clear
+        let (stdout, _, code) = run_cache_cmd(temp_vault.path(), &["cache", "clear"]);
+        assert_eq!(code, 0);
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert!(json["cleared"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn cache_rebuild_progress() {
+        let temp_vault = create_temp_vault();
+
+        let (stdout, stderr, code) = run_cache_cmd(
+            temp_vault.path(),
+            &["cache", "rebuild", "--progress"],
+        );
+        assert_eq!(code, 0);
+
+        // Progress output goes to stderr
+        assert!(stderr.contains("Indexing"));
+
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(json["indexed_notes"], 2);
+    }
+}

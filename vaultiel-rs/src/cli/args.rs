@@ -174,6 +174,11 @@ pub enum Commands {
     /// Find broken links in the vault
     #[command(name = "find-broken-links")]
     FindBrokenLinks(FindBrokenLinksArgs),
+
+    // === Phase 5: Caching ===
+
+    /// Cache management commands
+    Cache(CacheArgs),
 }
 
 // === List ===
@@ -803,4 +808,31 @@ pub struct FindBrokenLinksArgs {
     /// Check specific note only
     #[arg(long)]
     pub note: Option<String>,
+}
+
+// === Cache Operations ===
+
+#[derive(Parser, Debug)]
+pub struct CacheArgs {
+    #[command(subcommand)]
+    pub command: CacheCommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum CacheCommands {
+    /// Show cache status and statistics
+    Status,
+
+    /// Force a full cache rebuild
+    Rebuild(CacheRebuildArgs),
+
+    /// Clear the cache entirely
+    Clear,
+}
+
+#[derive(Parser, Debug)]
+pub struct CacheRebuildArgs {
+    /// Show progress during rebuild
+    #[arg(long)]
+    pub progress: bool,
 }

@@ -179,33 +179,33 @@ Linting and diagnostics.
 Performance optimization for large vaults.
 
 ### Cache Infrastructure
-- [ ] Design cache file format (JSON or binary)
-- [ ] Implement cache location logic (global vs local)
-- [ ] Atomic cache writes (temp file + rename)
-- [ ] Lock file for concurrent access
-- [ ] Cache versioning (invalidate on vaultiel upgrade)
+- [x] Design cache file format (JSON or binary)
+- [x] Implement cache location logic (global vs local)
+- [x] Atomic cache writes (temp file + rename)
+- [x] Lock file for concurrent access
+- [x] Cache versioning (invalidate on vaultiel upgrade)
 
 ### Indexing
-- [ ] Index note paths and mtimes
-- [ ] Index parsed frontmatter
-- [ ] Index outgoing links with context
-- [ ] Index tags
-- [ ] Index block IDs
-- [ ] Index tasks
-- [ ] Index headings
+- [x] Index note paths and mtimes
+- [x] Index parsed frontmatter
+- [x] Index outgoing links with context
+- [x] Index tags
+- [x] Index block IDs
+- [x] Index tasks
+- [x] Index headings
 
 ### Incremental Updates
-- [ ] Detect changed files via mtime
-- [ ] Re-index only changed files
-- [ ] Update incoming link references on change
-- [ ] Handle file deletion
-- [ ] Handle file creation
+- [x] Detect changed files via mtime
+- [x] Re-index only changed files
+- [x] Update incoming link references on change
+- [x] Handle file deletion
+- [x] Handle file creation
 
 ### Commands
-- [ ] `cache status` - Show cache info
-- [ ] `cache rebuild` - Force full rebuild
-- [ ] `cache rebuild --verbose` - Progress output
-- [ ] `cache clear` - Remove cache
+- [x] `cache status` - Show cache info
+- [x] `cache rebuild` - Force full rebuild
+- [x] `cache rebuild --progress` - Progress output
+- [x] `cache clear` - Remove cache
 
 ### Integration
 - [ ] Auto-enable caching for vaults > threshold

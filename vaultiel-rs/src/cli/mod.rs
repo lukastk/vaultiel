@@ -4,6 +4,7 @@ pub mod args;
 pub mod output;
 
 pub mod blocks;
+pub mod cache;
 pub mod content;
 pub mod create;
 pub mod delete;

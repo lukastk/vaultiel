@@ -2,9 +2,9 @@
 
 use clap::Parser;
 use std::process::ExitCode;
-use vaultiel::cli::args::{Cli, Commands};
+use vaultiel::cli::args::{Cli, Commands, CacheCommands};
 use vaultiel::cli::output::Output;
-use vaultiel::cli::{blocks, content, create, delete, frontmatter, headings, info, links, lint, list, rename, resolve, search, tags, tasks};
+use vaultiel::cli::{blocks, cache, content, create, delete, frontmatter, headings, info, links, lint, list, rename, resolve, search, tags, tasks};
 use vaultiel::cli::lint::LintFormat;
 use vaultiel::types::Priority;
 use vaultiel::config::Config;
@@ -228,6 +228,17 @@ fn run(cli: &Cli) -> Result<VaultExitCode, VaultError> {
         }
         Commands::FindBrokenLinks(args) => {
             lint::find_broken_links(&vault, args.note.as_deref(), &output)
+        }
+
+        // Phase 5 commands
+        Commands::Cache(args) => {
+            match &args.command {
+                CacheCommands::Status => cache::status(&vault, &output),
+                CacheCommands::Rebuild(rebuild_args) => {
+                    cache::rebuild(&vault, rebuild_args.progress, &output)
+                }
+                CacheCommands::Clear => cache::clear(&vault, &output),
+            }
         }
     }
 }

@@ -80,6 +80,9 @@ pub enum VaultError {
 
     #[error("{0}")]
     Other(String),
+
+    #[error("Cache error: {0}")]
+    CacheError(String),
 }
 
 impl VaultError {
