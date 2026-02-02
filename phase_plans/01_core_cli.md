@@ -161,11 +161,13 @@ pretty_assertions = "1"
 - Test code block skipping (links inside code blocks should not be parsed)
 
 ### Integration Tests
-Create fixture vaults in `tests/fixtures/`:
+Fixture vaults are in `fixtures/` at repo root (shared across language bindings):
 - `minimal/` - Single note for basic tests
 - `links/` - Notes with various link types
 - `frontmatter/` - Notes with various frontmatter structures
 - `unicode/` - Notes with unicode in names and content
+
+Rust integration tests are in `vaultiel-rs/tests/`.
 
 ### Test Commands
 ```bash
@@ -180,7 +182,7 @@ Phase 1 is complete when:
 - [x] All commands from Phase 1 of PROJECT_PLAN.md are implemented
 - [x] All parsers handle edge cases correctly
 - [x] Unit test coverage for all parsers (110 tests passing)
-- [ ] Integration tests for all commands (TODO)
+- [x] Integration tests for CLI commands (13 tests in vaultiel-rs/tests/)
 - [x] `--dry-run` works for all write operations
 - [x] Output formats work (`--json`, `--yaml`, `--toml`)
 - [x] Exit codes are correct per spec
@@ -212,5 +214,4 @@ Phase 1 is complete when:
 - Proper exit codes
 
 ### Remaining
-- Integration tests with fixture vaults
-- Edge case testing for CLI commands
+- Additional edge case testing for CLI commands (ongoing)
