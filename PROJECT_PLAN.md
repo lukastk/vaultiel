@@ -250,12 +250,12 @@ Language bindings for integration.
 - [ ] Documentation and examples
 
 ### Python Bindings
-- [ ] Set up PyO3
-- [ ] Expose core vault operations
-- [ ] Expose link graph queries
-- [ ] Expose task operations
-- [ ] PyPI package setup
-- [ ] Type stubs (`.pyi` files)
+- [x] Set up PyO3
+- [x] Expose core vault operations
+- [x] Expose link graph queries
+- [x] Expose task operations
+- [x] PyPI package setup
+- [x] Type stubs (`.pyi` files)
 - [ ] Documentation and examples
 
 ---
