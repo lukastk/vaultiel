@@ -4,7 +4,8 @@ use clap::Parser;
 use std::process::ExitCode;
 use vaultiel::cli::args::{Cli, Commands};
 use vaultiel::cli::output::Output;
-use vaultiel::cli::{blocks, content, create, delete, frontmatter, headings, links, list, rename, resolve, search, tags};
+use vaultiel::cli::{blocks, content, create, delete, frontmatter, headings, links, list, rename, resolve, search, tags, tasks};
+use vaultiel::types::Priority;
 use vaultiel::config::Config;
 use vaultiel::error::{ExitCode as VaultExitCode, VaultError};
 use vaultiel::vault::Vault;
@@ -146,6 +147,63 @@ fn run(cli: &Cli) -> Result<VaultExitCode, VaultError> {
         }
         Commands::Rename(args) => {
             rename::rename(&vault, &args.from, &args.to, args.no_propagate, args.dry_run, &output)
+        }
+
+        // Phase 3 commands
+        Commands::GetTasks(args) => {
+            let filter = tasks::TaskFilter {
+                symbols: args.symbol.clone(),
+                due_before: args.due_before.clone(),
+                due_after: args.due_after.clone(),
+                due_on: args.due_on.clone(),
+                scheduled_before: args.scheduled_before.clone(),
+                scheduled_after: args.scheduled_after.clone(),
+                scheduled_on: args.scheduled_on.clone(),
+                done_before: args.done_before.clone(),
+                done_after: args.done_after.clone(),
+                done_on: args.done_on.clone(),
+                priority: args.priority.as_ref().and_then(|p| p.parse().ok()),
+                contains: args.contains.clone(),
+                has_metadata: args.has_metadata.clone(),
+                links_to: args.links_to.clone(),
+                tag: args.tag.clone(),
+                has_block_ref: args.has_block_ref,
+                block_ref: args.block_ref.clone(),
+            };
+            tasks::get_tasks(
+                &vault,
+                args.note.as_deref(),
+                args.glob.as_deref(),
+                filter,
+                args.flat,
+                &output,
+            )
+        }
+        Commands::FormatTask(args) => {
+            let priority: Option<Priority> = args.priority.as_ref().and_then(|p| p.parse().ok());
+            let custom: std::collections::HashMap<String, String> = args
+                .custom_metadata
+                .iter()
+                .filter_map(|s| {
+                    let parts: Vec<&str> = s.splitn(2, '=').collect();
+                    if parts.len() == 2 {
+                        Some((parts[0].to_string(), parts[1].to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            tasks::format_task_command(
+                &args.desc,
+                &args.symbol,
+                args.scheduled.as_deref(),
+                args.due.as_deref(),
+                args.done.as_deref(),
+                priority,
+                &custom,
+                &vault,
+                &output,
+            )
         }
     }
 }

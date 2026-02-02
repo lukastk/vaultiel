@@ -15,6 +15,7 @@ pub mod rename;
 pub mod resolve;
 pub mod search;
 pub mod tags;
+pub mod tasks;
 
 pub use args::{Cli, Commands};
 pub use output::Output;

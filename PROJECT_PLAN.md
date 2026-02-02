@@ -106,37 +106,37 @@ Build the graph structure and traversal capabilities.
 Full Obsidian Tasks plugin compatibility.
 
 ### Task Parsing
-- [ ] Parse task markers (`- [ ]`, `- [x]`, `- [>]`, etc.)
-- [ ] Parse Obsidian Tasks metadata (due, scheduled, done dates)
-- [ ] Parse priority markers
-- [ ] Parse custom metadata fields (from config)
-- [ ] Extract links within tasks
-- [ ] Extract tags within tasks
-- [ ] Extract block IDs on tasks
+- [x] Parse task markers (`- [ ]`, `- [x]`, `- [>]`, etc.)
+- [x] Parse Obsidian Tasks metadata (due, scheduled, done dates)
+- [x] Parse priority markers
+- [x] Parse custom metadata fields (from config)
+- [x] Extract links within tasks
+- [x] Extract tags within tasks
+- [x] Extract block IDs on tasks
 
 ### Task Hierarchy
-- [ ] Track indentation levels
-- [ ] Build parent/child relationships
-- [ ] Support nested output (tree structure)
-- [ ] Support flat output with parent references
+- [x] Track indentation levels
+- [x] Build parent/child relationships
+- [x] Support nested output (tree structure)
+- [x] Support flat output with parent references
 
 ### Commands
-- [ ] `get-tasks` - Basic task extraction
-- [ ] `get-tasks` - Filter by note (`--note`)
-- [ ] `get-tasks` - Filter by glob (`--glob`)
-- [ ] `get-tasks` - Filter by symbol (`--symbol`)
-- [ ] `get-tasks` - Filter by due date (`--due-before`, `--due-after`, `--due-on`)
-- [ ] `get-tasks` - Filter by scheduled date
-- [ ] `get-tasks` - Filter by done date
-- [ ] `get-tasks` - Filter by priority (`--priority`)
-- [ ] `get-tasks` - Filter by description text (`--contains`)
-- [ ] `get-tasks` - Filter by custom metadata (`--has`)
-- [ ] `get-tasks` - Filter by linked note (`--links-to`)
-- [ ] `get-tasks` - Filter by tag (`--tag`)
-- [ ] `get-tasks` - Filter by block ref (`--has-block-ref`, `--block-ref`)
-- [ ] `get-tasks` - Flat output (`--flat`)
-- [ ] `format-task` - Format task string for Obsidian
-- [ ] `format-task` - Relative date support (today, tomorrow, +3d)
+- [x] `get-tasks` - Basic task extraction
+- [x] `get-tasks` - Filter by note (`--note`)
+- [x] `get-tasks` - Filter by glob (`--glob`)
+- [x] `get-tasks` - Filter by symbol (`--symbol`)
+- [x] `get-tasks` - Filter by due date (`--due-before`, `--due-after`, `--due-on`)
+- [x] `get-tasks` - Filter by scheduled date
+- [x] `get-tasks` - Filter by done date
+- [x] `get-tasks` - Filter by priority (`--priority`)
+- [x] `get-tasks` - Filter by description text (`--contains`)
+- [x] `get-tasks` - Filter by custom metadata (`--has`)
+- [x] `get-tasks` - Filter by linked note (`--links-to`)
+- [x] `get-tasks` - Filter by tag (`--tag`)
+- [x] `get-tasks` - Filter by block ref (`--has-block-ref`, `--block-ref`)
+- [x] `get-tasks` - Flat output (`--flat`)
+- [x] `format-task` - Format task string for Obsidian
+- [x] `format-task` - Relative date support (today, tomorrow, +3d)
 
 ---
 

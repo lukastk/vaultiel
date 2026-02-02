@@ -413,3 +413,122 @@ mod rename_command {
         assert!(linker_content.contains("[[Source]]"));
     }
 }
+
+// Phase 3: Tasks
+
+mod get_tasks_command {
+    use super::*;
+
+    #[test]
+    fn get_tasks_all() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["get-tasks"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"tasks\""));
+        // Should contain hierarchical output by default
+        assert!(stdout.contains("\"children\""));
+    }
+
+    #[test]
+    fn get_tasks_flat() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["get-tasks", "--flat"]);
+        assert_eq!(code, 0);
+        // Flat output should not have children arrays
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let tasks = json["tasks"].as_array().unwrap();
+        assert!(!tasks.is_empty());
+        // Check first task doesn't have children key (or it's missing)
+        for task in tasks {
+            assert!(task.get("children").is_none());
+        }
+    }
+
+    #[test]
+    fn get_tasks_filter_by_symbol() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["get-tasks", "--symbol", "[x]", "--flat"]);
+        assert_eq!(code, 0);
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let tasks = json["tasks"].as_array().unwrap();
+        // All tasks should have [x] symbol
+        for task in tasks {
+            assert_eq!(task["symbol"], "[x]");
+        }
+    }
+
+    #[test]
+    fn get_tasks_filter_by_priority() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["get-tasks", "--priority", "high", "--flat"]);
+        assert_eq!(code, 0);
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let tasks = json["tasks"].as_array().unwrap();
+        assert!(!tasks.is_empty());
+        for task in tasks {
+            assert_eq!(task["priority"], "high");
+        }
+    }
+
+    #[test]
+    fn get_tasks_with_links() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["get-tasks", "--flat"]);
+        assert_eq!(code, 0);
+        // Should have tasks with links
+        assert!(stdout.contains("\"links\""));
+        assert!(stdout.contains("\"to\""));
+    }
+
+    #[test]
+    fn get_tasks_with_tags() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["get-tasks", "--flat"]);
+        assert_eq!(code, 0);
+        // Should have tasks with tags
+        assert!(stdout.contains("\"tags\""));
+        assert!(stdout.contains("#high-priority"));
+    }
+
+    #[test]
+    fn get_tasks_with_block_ids() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["get-tasks", "--has-block-ref", "--flat"]);
+        assert_eq!(code, 0);
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let tasks = json["tasks"].as_array().unwrap();
+        // All returned tasks should have block_id
+        for task in tasks {
+            assert!(task["block_id"].is_string());
+        }
+    }
+}
+
+mod format_task_command {
+    use super::*;
+
+    #[test]
+    fn format_simple_task() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["format-task", "--desc", "Test task"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"formatted\""));
+        assert!(stdout.contains("- [ ] Test task"));
+    }
+
+    #[test]
+    fn format_task_with_due() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["format-task", "--desc", "Task with due", "--due", "2026-02-15"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("2026-02-15"));
+        assert!(stdout.contains("📅"));
+    }
+
+    #[test]
+    fn format_task_with_priority() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["format-task", "--desc", "High priority", "--priority", "high"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("⏫")); // High priority emoji
+    }
+
+    #[test]
+    fn format_task_relative_date() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["format-task", "--desc", "Tomorrow task", "--due", "tomorrow"]);
+        assert_eq!(code, 0);
+        // Should contain a date (tomorrow from today)
+        assert!(stdout.contains("📅"));
+        assert!(stdout.contains("2026-02")); // Should be in February 2026
+    }
+}

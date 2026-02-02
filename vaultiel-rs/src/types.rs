@@ -209,6 +209,201 @@ pub enum OutputFormat {
     Toml,
 }
 
+/// A task found in a note.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Task {
+    /// Location of the task in the vault.
+    pub location: TaskLocation,
+
+    /// The raw task line as it appears in the note.
+    pub raw: String,
+
+    /// The task symbol (e.g., "[ ]", "[x]", "[>]").
+    pub symbol: String,
+
+    /// The task description (without metadata).
+    pub description: String,
+
+    /// Indentation level (0 = top-level).
+    pub indent: usize,
+
+    /// Line number of parent task (if nested).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_line: Option<usize>,
+
+    /// Scheduled date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduled: Option<String>,
+
+    /// Due date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due: Option<String>,
+
+    /// Done/completed date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub done: Option<String>,
+
+    /// Priority level.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<Priority>,
+
+    /// Custom metadata fields.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub custom: std::collections::HashMap<String, String>,
+
+    /// Links contained in the task.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<TaskLink>,
+
+    /// Tags contained in the task.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+
+    /// Block ID attached to this task.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_id: Option<String>,
+}
+
+/// Location of a task in the vault.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskLocation {
+    /// The file path (relative to vault root).
+    pub file: std::path::PathBuf,
+
+    /// Line number (1-indexed).
+    pub line: usize,
+}
+
+/// A link found within a task.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskLink {
+    /// The target note path.
+    pub to: String,
+
+    /// Optional display alias.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+}
+
+/// Task priority level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Priority {
+    Highest,
+    High,
+    Medium,
+    Low,
+    Lowest,
+}
+
+impl std::fmt::Display for Priority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Priority::Highest => write!(f, "highest"),
+            Priority::High => write!(f, "high"),
+            Priority::Medium => write!(f, "medium"),
+            Priority::Low => write!(f, "low"),
+            Priority::Lowest => write!(f, "lowest"),
+        }
+    }
+}
+
+impl std::str::FromStr for Priority {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "highest" => Ok(Priority::Highest),
+            "high" => Ok(Priority::High),
+            "medium" => Ok(Priority::Medium),
+            "low" => Ok(Priority::Low),
+            "lowest" => Ok(Priority::Lowest),
+            _ => Err(format!("Invalid priority: {}", s)),
+        }
+    }
+}
+
+/// A hierarchical task with children.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HierarchicalTask {
+    /// Location of the task in the vault.
+    pub location: TaskLocation,
+
+    /// The raw task line as it appears in the note.
+    pub raw: String,
+
+    /// The task symbol (e.g., "[ ]", "[x]", "[>]").
+    pub symbol: String,
+
+    /// The task description (without metadata).
+    pub description: String,
+
+    /// Indentation level (0 = top-level).
+    pub indent: usize,
+
+    /// Line number of parent task (if nested).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_line: Option<usize>,
+
+    /// Child tasks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<HierarchicalTask>,
+
+    /// Scheduled date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduled: Option<String>,
+
+    /// Due date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due: Option<String>,
+
+    /// Done/completed date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub done: Option<String>,
+
+    /// Priority level.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<Priority>,
+
+    /// Custom metadata fields.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub custom: std::collections::HashMap<String, String>,
+
+    /// Links contained in the task.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<TaskLink>,
+
+    /// Tags contained in the task.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+
+    /// Block ID attached to this task.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_id: Option<String>,
+}
+
+impl From<Task> for HierarchicalTask {
+    fn from(task: Task) -> Self {
+        HierarchicalTask {
+            location: task.location,
+            raw: task.raw,
+            symbol: task.symbol,
+            description: task.description,
+            indent: task.indent,
+            parent_line: task.parent_line,
+            children: Vec::new(),
+            scheduled: task.scheduled,
+            due: task.due,
+            done: task.done,
+            priority: task.priority,
+            custom: task.custom,
+            links: task.links,
+            tags: task.tags,
+            block_id: task.block_id,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

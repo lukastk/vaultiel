@@ -99,6 +99,52 @@ fn default_priority_lowest_symbol() -> String {
     "⏬".to_string()
 }
 
+/// Task configuration for the parser (extracted from TasksConfig).
+#[derive(Debug, Clone)]
+pub struct TaskConfig {
+    pub due: String,
+    pub scheduled: String,
+    pub done: String,
+    pub priority_highest: String,
+    pub priority_high: String,
+    pub priority_medium: String,
+    pub priority_low: String,
+    pub priority_lowest: String,
+    pub custom_metadata: HashMap<String, String>,
+}
+
+impl Default for TaskConfig {
+    fn default() -> Self {
+        Self {
+            due: default_due_symbol(),
+            scheduled: default_scheduled_symbol(),
+            done: default_done_symbol(),
+            priority_highest: default_priority_highest_symbol(),
+            priority_high: default_priority_high_symbol(),
+            priority_medium: default_priority_medium_symbol(),
+            priority_low: default_priority_low_symbol(),
+            priority_lowest: default_priority_lowest_symbol(),
+            custom_metadata: HashMap::new(),
+        }
+    }
+}
+
+impl From<&TasksConfig> for TaskConfig {
+    fn from(config: &TasksConfig) -> Self {
+        Self {
+            due: config.due.clone(),
+            scheduled: config.scheduled.clone(),
+            done: config.done.clone(),
+            priority_highest: config.priority_highest.clone(),
+            priority_high: config.priority_high.clone(),
+            priority_medium: config.priority_medium.clone(),
+            priority_low: config.priority_low.clone(),
+            priority_lowest: config.priority_lowest.clone(),
+            custom_metadata: config.custom_metadata.clone(),
+        }
+    }
+}
+
 /// Cache configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheConfig {

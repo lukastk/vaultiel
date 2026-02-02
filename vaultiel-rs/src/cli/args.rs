@@ -148,6 +148,16 @@ pub enum Commands {
 
     /// Rename a note with link propagation
     Rename(RenameArgs),
+
+    // === Phase 3: Tasks ===
+
+    /// Get tasks from notes
+    #[command(name = "get-tasks")]
+    GetTasks(GetTasksArgs),
+
+    /// Format a task string for Obsidian
+    #[command(name = "format-task")]
+    FormatTask(FormatTaskArgs),
 }
 
 // === List ===
@@ -611,4 +621,120 @@ pub struct RenameArgs {
     /// Show what would change without writing
     #[arg(long)]
     pub dry_run: bool,
+}
+
+// === Task Operations ===
+
+#[derive(Parser, Debug)]
+pub struct GetTasksArgs {
+    /// Filter to tasks in specific note
+    #[arg(long)]
+    pub note: Option<String>,
+
+    /// Filter to tasks in notes matching glob
+    #[arg(long)]
+    pub glob: Option<String>,
+
+    /// Filter by task symbol (repeatable, e.g., --symbol "[ ]" --symbol "[x]")
+    #[arg(long)]
+    pub symbol: Vec<String>,
+
+    /// Due date before (exclusive)
+    #[arg(long)]
+    pub due_before: Option<String>,
+
+    /// Due date after (exclusive)
+    #[arg(long)]
+    pub due_after: Option<String>,
+
+    /// Due on specific date
+    #[arg(long)]
+    pub due_on: Option<String>,
+
+    /// Scheduled date before (exclusive)
+    #[arg(long)]
+    pub scheduled_before: Option<String>,
+
+    /// Scheduled date after (exclusive)
+    #[arg(long)]
+    pub scheduled_after: Option<String>,
+
+    /// Scheduled on specific date
+    #[arg(long)]
+    pub scheduled_on: Option<String>,
+
+    /// Done date before (exclusive)
+    #[arg(long)]
+    pub done_before: Option<String>,
+
+    /// Done date after (exclusive)
+    #[arg(long)]
+    pub done_after: Option<String>,
+
+    /// Done on specific date
+    #[arg(long)]
+    pub done_on: Option<String>,
+
+    /// Filter by priority (highest, high, medium, low, lowest)
+    #[arg(long)]
+    pub priority: Option<String>,
+
+    /// Filter by description text
+    #[arg(long)]
+    pub contains: Option<String>,
+
+    /// Filter by custom metadata presence (repeatable)
+    #[arg(long = "has")]
+    pub has_metadata: Vec<String>,
+
+    /// Filter to tasks linking to a note
+    #[arg(long)]
+    pub links_to: Option<String>,
+
+    /// Filter by tag
+    #[arg(long)]
+    pub tag: Option<String>,
+
+    /// Filter to tasks with block references
+    #[arg(long)]
+    pub has_block_ref: bool,
+
+    /// Filter by specific block reference
+    #[arg(long)]
+    pub block_ref: Option<String>,
+
+    /// Return flat list instead of hierarchy
+    #[arg(long)]
+    pub flat: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct FormatTaskArgs {
+    /// Task description
+    #[arg(long)]
+    pub desc: String,
+
+    /// Task symbol (default: "[ ]")
+    #[arg(long, default_value = "[ ]")]
+    pub symbol: String,
+
+    /// Due date (ISO date or relative: today, tomorrow, +3d)
+    #[arg(long)]
+    pub due: Option<String>,
+
+    /// Scheduled date (ISO date or relative)
+    #[arg(long)]
+    pub scheduled: Option<String>,
+
+    /// Done date (ISO date or relative)
+    #[arg(long)]
+    pub done: Option<String>,
+
+    /// Priority level (highest, high, medium, low, lowest)
+    #[arg(long)]
+    pub priority: Option<String>,
+
+    /// Custom metadata in KEY=VALUE format (repeatable)
+    #[arg(long = "custom")]
+    pub custom_metadata: Vec<String>,
 }
