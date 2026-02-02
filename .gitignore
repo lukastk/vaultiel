@@ -1,4 +1,5 @@
 # Rust
+target/
 vaultiel-rs/target/
 
 # Node (for future TypeScript bindings)

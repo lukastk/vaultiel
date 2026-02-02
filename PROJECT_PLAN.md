@@ -241,12 +241,12 @@ Stable identifiers for external integrations.
 Language bindings for integration.
 
 ### TypeScript Bindings
-- [ ] Set up napi-rs or wasm-bindgen
-- [ ] Expose core vault operations
-- [ ] Expose link graph queries
-- [ ] Expose task operations
-- [ ] NPM package setup
-- [ ] TypeScript type definitions
+- [x] Set up napi-rs or wasm-bindgen
+- [x] Expose core vault operations
+- [x] Expose link graph queries
+- [x] Expose task operations
+- [x] NPM package setup
+- [x] TypeScript type definitions
 - [ ] Documentation and examples
 
 ### Python Bindings
