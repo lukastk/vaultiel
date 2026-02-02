@@ -8,6 +8,7 @@ pub mod cache;
 pub mod content;
 pub mod create;
 pub mod delete;
+pub mod export;
 pub mod frontmatter;
 pub mod headings;
 pub mod info;

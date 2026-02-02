@@ -193,6 +193,12 @@ pub enum Commands {
     /// Get vaultiel metadata from a note
     #[command(name = "get-metadata")]
     GetMetadata(GetMetadataArgs),
+
+    // === Phase 8: Advanced Features ===
+
+    /// Export vault graph to external format
+    #[command(name = "export-graph")]
+    ExportGraph(ExportGraphArgs),
 }
 
 // === List ===
@@ -881,4 +887,48 @@ pub struct GetByIdArgs {
 pub struct GetMetadataArgs {
     /// Path to the note
     pub path: String,
+}
+
+// === Export Operations ===
+
+#[derive(Parser, Debug)]
+pub struct ExportGraphArgs {
+    /// Export format
+    #[arg(long, value_enum, default_value = "cypher")]
+    pub format: ExportFormat,
+
+    /// Output file (stdout if not specified)
+    #[arg(short, long)]
+    pub output: Option<PathBuf>,
+
+    /// Include tags
+    #[arg(long)]
+    pub include_tags: bool,
+
+    /// Include headings
+    #[arg(long)]
+    pub include_headings: bool,
+
+    /// Include frontmatter properties
+    #[arg(long)]
+    pub include_frontmatter: bool,
+
+    /// Use MERGE instead of CREATE (Cypher only, for idempotent imports)
+    #[arg(long)]
+    pub use_merge: bool,
+
+    /// Base URI for JSON-LD (default: file:///path/to/vault/)
+    #[arg(long)]
+    pub base_uri: Option<String>,
+
+    /// Pretty-print JSON output (JSON-LD only)
+    #[arg(long)]
+    pub pretty: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+pub enum ExportFormat {
+    #[default]
+    Cypher,
+    JsonLd,
 }

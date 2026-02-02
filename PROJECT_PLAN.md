@@ -265,8 +265,8 @@ Language bindings for integration.
 Future enhancements (lower priority).
 
 ### Graph Database Export
-- [ ] `export-graph` - Neo4j Cypher format
-- [ ] `export-graph` - JSON-LD format
+- [x] `export-graph` - Neo4j Cypher format
+- [x] `export-graph` - JSON-LD format
 - [ ] Incremental export (diff-based)
 
 ### Templating

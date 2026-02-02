@@ -35,6 +35,7 @@ pub mod cache;
 pub mod cli;
 pub mod config;
 pub mod error;
+pub mod export;
 pub mod graph;
 pub mod health;
 pub mod metadata;

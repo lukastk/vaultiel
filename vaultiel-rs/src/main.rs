@@ -4,7 +4,7 @@ use clap::Parser;
 use std::process::ExitCode;
 use vaultiel::cli::args::{Cli, Commands, CacheCommands};
 use vaultiel::cli::output::Output;
-use vaultiel::cli::{blocks, cache, content, create, delete, frontmatter, headings, info, links, lint, list, metadata, rename, resolve, search, tags, tasks};
+use vaultiel::cli::{blocks, cache, content, create, delete, export, frontmatter, headings, info, links, lint, list, metadata, rename, resolve, search, tags, tasks};
 use vaultiel::cli::lint::LintFormat;
 use vaultiel::types::Priority;
 use vaultiel::config::Config;
@@ -258,6 +258,22 @@ fn run(cli: &Cli) -> Result<VaultExitCode, VaultError> {
         }
         Commands::GetMetadata(args) => {
             metadata::get_note_metadata(&vault, &args.path, &output)
+        }
+
+        // Phase 8 commands
+        Commands::ExportGraph(args) => {
+            export::export_graph(
+                &vault,
+                args.format,
+                args.output.clone(),
+                args.include_tags,
+                args.include_headings,
+                args.include_frontmatter,
+                args.use_merge,
+                args.base_uri.clone(),
+                args.pretty,
+            )?;
+            Ok(VaultExitCode::Success)
         }
     }
 }
