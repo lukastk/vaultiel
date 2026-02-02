@@ -4,7 +4,8 @@ use clap::Parser;
 use std::process::ExitCode;
 use vaultiel::cli::args::{Cli, Commands};
 use vaultiel::cli::output::Output;
-use vaultiel::cli::{blocks, content, create, delete, frontmatter, headings, links, list, rename, resolve, search, tags, tasks};
+use vaultiel::cli::{blocks, content, create, delete, frontmatter, headings, info, links, lint, list, rename, resolve, search, tags, tasks};
+use vaultiel::cli::lint::LintFormat;
 use vaultiel::types::Priority;
 use vaultiel::config::Config;
 use vaultiel::error::{ExitCode as VaultExitCode, VaultError};
@@ -204,6 +205,29 @@ fn run(cli: &Cli) -> Result<VaultExitCode, VaultError> {
                 &vault,
                 &output,
             )
+        }
+
+        // Phase 4 commands
+        Commands::Info(args) => {
+            info::info(&vault, args.detailed, &output)
+        }
+        Commands::Lint(args) => {
+            let format = LintFormat::from_str(&args.format).unwrap_or(LintFormat::Json);
+            lint::lint(
+                &vault,
+                &args.only,
+                &args.ignore,
+                args.glob.as_deref(),
+                &args.fail_on,
+                format,
+                &output,
+            )
+        }
+        Commands::FindOrphans(args) => {
+            lint::find_orphans(&vault, &args.exclude, &output)
+        }
+        Commands::FindBrokenLinks(args) => {
+            lint::find_broken_links(&vault, args.note.as_deref(), &output)
         }
     }
 }

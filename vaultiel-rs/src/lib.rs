@@ -35,6 +35,7 @@ pub mod cli;
 pub mod config;
 pub mod error;
 pub mod graph;
+pub mod health;
 pub mod note;
 pub mod parser;
 pub mod types;

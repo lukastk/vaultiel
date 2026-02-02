@@ -145,32 +145,32 @@ Full Obsidian Tasks plugin compatibility.
 Linting and diagnostics.
 
 ### Statistics
-- [ ] `info` - Basic vault stats (note count, link count, etc.)
-- [ ] `info` - Detailed stats (`--detailed`)
-- [ ] `info` - Notes by folder breakdown
-- [ ] `info` - Top tags, top linked notes
+- [x] `info` - Basic vault stats (note count, link count, etc.)
+- [x] `info` - Detailed stats (`--detailed`)
+- [x] `info` - Notes by folder breakdown
+- [x] `info` - Top tags, top linked notes
 
 ### Issue Detection
-- [ ] Broken link detection
-- [ ] Broken embed detection
-- [ ] Broken heading link detection (`[[Note#Heading]]`)
-- [ ] Broken block ref detection (`[[Note#^block]]`)
-- [ ] Orphan note detection
-- [ ] Duplicate alias detection
-- [ ] Duplicate block ID detection (within a note)
-- [ ] Empty note detection
-- [ ] Missing frontmatter detection
-- [ ] Invalid frontmatter detection (YAML parse errors)
+- [x] Broken link detection
+- [x] Broken embed detection
+- [x] Broken heading link detection (`[[Note#Heading]]`)
+- [x] Broken block ref detection (`[[Note#^block]]`)
+- [x] Orphan note detection
+- [x] Duplicate alias detection
+- [x] Duplicate block ID detection (within a note)
+- [x] Empty note detection
+- [x] Missing frontmatter detection
+- [x] Invalid frontmatter detection (YAML parse errors)
 
 ### Commands
-- [ ] `lint` - Run all checks
-- [ ] `lint` - Filter checks (`--only`, `--ignore`)
-- [ ] `lint` - Scope to notes (`--glob`)
+- [x] `lint` - Run all checks
+- [x] `lint` - Filter checks (`--only`, `--ignore`)
+- [x] `lint` - Scope to notes (`--glob`)
 - [ ] `lint` - Auto-fix (`--fix`)
-- [ ] `lint` - CI mode (`--fail-on`)
-- [ ] `lint` - GitHub Actions output (`--format github`)
-- [ ] `find-orphans` - Shorthand with `--exclude` support
-- [ ] `find-broken-links` - Shorthand with `--note` support
+- [x] `lint` - CI mode (`--fail-on`)
+- [x] `lint` - GitHub Actions output (`--format github`)
+- [x] `find-orphans` - Shorthand with `--exclude` support
+- [x] `find-broken-links` - Shorthand with `--note` support
 
 ---
 

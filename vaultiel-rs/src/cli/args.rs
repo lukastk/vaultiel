@@ -158,6 +158,22 @@ pub enum Commands {
     /// Format a task string for Obsidian
     #[command(name = "format-task")]
     FormatTask(FormatTaskArgs),
+
+    // === Phase 4: Vault Health & Info ===
+
+    /// Display vault information and statistics
+    Info(InfoArgs),
+
+    /// Check vault health and report issues
+    Lint(LintArgs),
+
+    /// Find notes with no incoming links
+    #[command(name = "find-orphans")]
+    FindOrphans(FindOrphansArgs),
+
+    /// Find broken links in the vault
+    #[command(name = "find-broken-links")]
+    FindBrokenLinks(FindBrokenLinksArgs),
 }
 
 // === List ===
@@ -737,4 +753,54 @@ pub struct FormatTaskArgs {
     /// Custom metadata in KEY=VALUE format (repeatable)
     #[arg(long = "custom")]
     pub custom_metadata: Vec<String>,
+}
+
+// === Vault Health & Info ===
+
+#[derive(Parser, Debug)]
+pub struct InfoArgs {
+    /// Include extended statistics
+    #[arg(long)]
+    pub detailed: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct LintArgs {
+    /// Auto-fix issues where possible
+    #[arg(long)]
+    pub fix: bool,
+
+    /// Only check specific issue type (repeatable)
+    #[arg(long)]
+    pub only: Vec<String>,
+
+    /// Skip specific issue type (repeatable)
+    #[arg(long)]
+    pub ignore: Vec<String>,
+
+    /// Check only notes matching pattern
+    #[arg(long)]
+    pub glob: Option<String>,
+
+    /// Exit non-zero if type found (repeatable, for CI)
+    #[arg(long)]
+    pub fail_on: Vec<String>,
+
+    /// Output format: json, text, github
+    #[arg(long, default_value = "json")]
+    pub format: String,
+}
+
+#[derive(Parser, Debug)]
+pub struct FindOrphansArgs {
+    /// Exclude notes matching pattern (repeatable)
+    #[arg(long)]
+    pub exclude: Vec<String>,
+}
+
+#[derive(Parser, Debug)]
+pub struct FindBrokenLinksArgs {
+    /// Check specific note only
+    #[arg(long)]
+    pub note: Option<String>,
 }

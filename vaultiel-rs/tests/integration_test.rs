@@ -532,3 +532,130 @@ mod format_task_command {
         assert!(stdout.contains("2026-02")); // Should be in February 2026
     }
 }
+
+// Phase 4: Vault Health & Info
+
+mod info_command {
+    use super::*;
+
+    #[test]
+    fn info_basic() {
+        let (stdout, _, code) = run_vaultiel("links", &["info"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"note_count\""));
+        assert!(stdout.contains("\"link_count\""));
+        assert!(stdout.contains("\"tag_count\""));
+        assert!(stdout.contains("\"orphan_count\""));
+    }
+
+    #[test]
+    fn info_detailed() {
+        let (stdout, _, code) = run_vaultiel("links", &["info", "--detailed"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"notes_by_folder\""));
+        assert!(stdout.contains("\"top_tags\""));
+        assert!(stdout.contains("\"top_linked\""));
+        assert!(stdout.contains("\"recently_modified\""));
+    }
+}
+
+mod lint_command {
+    use super::*;
+
+    #[test]
+    fn lint_all_checks() {
+        let (stdout, _, code) = run_vaultiel("links", &["lint"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"issues\""));
+        assert!(stdout.contains("\"summary\""));
+    }
+
+    #[test]
+    fn lint_only_orphans() {
+        let (stdout, _, code) = run_vaultiel("links", &["lint", "--only", "orphans"]);
+        assert_eq!(code, 0);
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let issues = json["issues"].as_array().unwrap();
+        for issue in issues {
+            assert_eq!(issue["type"], "orphans");
+        }
+    }
+
+    #[test]
+    fn lint_ignore_orphans() {
+        let (stdout, _, code) = run_vaultiel("links", &["lint", "--ignore", "orphans"]);
+        assert_eq!(code, 0);
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let issues = json["issues"].as_array().unwrap();
+        for issue in issues {
+            assert_ne!(issue["type"], "orphans");
+        }
+    }
+
+    #[test]
+    fn lint_fail_on() {
+        let (_, _, code) = run_vaultiel("links", &["lint", "--fail-on", "broken-links"]);
+        assert_eq!(code, 10); // LINT_ISSUES_FOUND exit code
+    }
+
+    #[test]
+    fn lint_text_format() {
+        let (stdout, _, code) = run_vaultiel("links", &["lint", "--format", "text"]);
+        assert_eq!(code, 0);
+        // Text format includes issue type in brackets
+        assert!(stdout.contains("["));
+    }
+
+    #[test]
+    fn lint_github_format() {
+        let (stdout, _, code) = run_vaultiel("links", &["lint", "--format", "github"]);
+        assert_eq!(code, 0);
+        // GitHub format uses ::error or ::warning
+        assert!(stdout.contains("::"));
+    }
+}
+
+mod find_orphans_command {
+    use super::*;
+
+    #[test]
+    fn find_orphans_basic() {
+        let (stdout, _, code) = run_vaultiel("links", &["find-orphans"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"orphans\""));
+        assert!(stdout.contains("\"count\""));
+        assert!(stdout.contains("Orphan.md"));
+    }
+
+    #[test]
+    fn find_orphans_exclude() {
+        let (stdout, _, code) = run_vaultiel("links", &["find-orphans", "--exclude", "Orphan*"]);
+        assert_eq!(code, 0);
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(json["count"], 0);
+    }
+}
+
+mod find_broken_links_command {
+    use super::*;
+
+    #[test]
+    fn find_broken_links_basic() {
+        let (stdout, _, code) = run_vaultiel("links", &["find-broken-links"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"broken_links\""));
+        assert!(stdout.contains("\"count\""));
+    }
+
+    #[test]
+    fn find_broken_links_in_note() {
+        let (stdout, _, code) = run_vaultiel("links", &["find-broken-links", "--note", "Hub"]);
+        assert_eq!(code, 0);
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let links = json["broken_links"].as_array().unwrap();
+        // Hub.md has one broken embed (image.png)
+        for link in links {
+            assert!(link["file"].as_str().unwrap().contains("Hub"));
+        }
+    }
+}
