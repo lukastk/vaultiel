@@ -212,11 +212,11 @@ impl Config {
             .join("vaultiel.toml")
     }
 
-    /// Resolve the vault path from CLI argument, config, or current directory.
+    /// Resolve the vault path from CLI argument or config.
     pub fn resolve_vault_path(&self, cli_vault: Option<&Path>) -> Result<PathBuf> {
-        // Priority: CLI flag > config > current directory
+        // Priority: CLI flag > config
         if let Some(path) = cli_vault {
-            let path = path.to_path_buf();
+            let path = expand_tilde(path);
             if path.is_dir() {
                 return Ok(path);
             } else {
@@ -225,17 +225,28 @@ impl Config {
         }
 
         if let Some(ref default) = self.vault.default {
-            if default.is_dir() {
-                return Ok(default.clone());
+            let path = expand_tilde(default);
+            if path.is_dir() {
+                return Ok(path);
             } else {
-                return Err(VaultError::VaultNotFound(default.clone()));
+                return Err(VaultError::VaultNotFound(path));
             }
         }
 
-        // Fall back to current directory
-        let cwd = std::env::current_dir()?;
-        Ok(cwd)
+        Err(VaultError::Other(
+            "No vault specified. Use --vault or set vault.default in ~/.config/vaultiel.toml".to_string()
+        ))
     }
+}
+
+/// Expand `~` to the user's home directory.
+fn expand_tilde(path: &Path) -> PathBuf {
+    if let Ok(stripped) = path.strip_prefix("~") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(stripped);
+        }
+    }
+    path.to_path_buf()
 }
 
 #[cfg(test)]
@@ -248,6 +259,21 @@ mod tests {
         assert!(config.vault.default.is_none());
         assert_eq!(config.tasks.due, "📅");
         assert!(config.cache.enabled);
+    }
+
+    #[test]
+    fn test_expand_tilde() {
+        let home = dirs::home_dir().unwrap();
+
+        // Test ~ expansion
+        let path = PathBuf::from("~/Documents/vault");
+        let expanded = expand_tilde(&path);
+        assert_eq!(expanded, home.join("Documents/vault"));
+
+        // Test path without ~ is unchanged
+        let path = PathBuf::from("/absolute/path");
+        let expanded = expand_tilde(&path);
+        assert_eq!(expanded, PathBuf::from("/absolute/path"));
     }
 
     #[test]
