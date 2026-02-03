@@ -149,6 +149,10 @@ pub enum Commands {
     /// Rename a note with link propagation
     Rename(RenameArgs),
 
+    /// Rename a frontmatter key across notes
+    #[command(name = "rename-frontmatter")]
+    RenameFrontmatter(RenameFrontmatterArgs),
+
     // === Phase 3: Tasks ===
 
     /// Get tasks from notes
@@ -666,6 +670,25 @@ pub struct RenameArgs {
     /// Don't update links in other notes
     #[arg(long)]
     pub no_propagate: bool,
+
+    /// Show what would change without writing
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct RenameFrontmatterArgs {
+    /// Current key name
+    #[arg(long)]
+    pub from: String,
+
+    /// New key name
+    #[arg(long)]
+    pub to: String,
+
+    /// Only rename in notes matching glob pattern
+    #[arg(long)]
+    pub glob: Option<String>,
 
     /// Show what would change without writing
     #[arg(long)]

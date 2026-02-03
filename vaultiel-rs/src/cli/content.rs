@@ -49,21 +49,52 @@ pub fn get_content(vault: &Vault, args: &GetContentArgs, output: &Output) -> Res
     let note = vault.load_note(&path)?;
 
     let content = if args.include_frontmatter {
-        note.full_content().to_string()
-    } else {
-        let body = note.body().to_string();
-
-        // Optionally filter out vaultiel field from frontmatter
-        if !args.include_vaultiel_field {
-            body
+        if args.include_vaultiel_field {
+            // Include full content with vaultiel field
+            note.full_content().to_string()
         } else {
-            body
+            // Exclude vaultiel field from frontmatter
+            filter_vaultiel_from_content(&note.content)
         }
+    } else {
+        note.body().to_string()
     };
 
     // For get-content, output raw text, not JSON
     output.print_raw(&content);
     Ok(())
+}
+
+/// Filter out the vaultiel field from frontmatter.
+fn filter_vaultiel_from_content(content: &str) -> String {
+    let split = split_frontmatter(content);
+
+    match split.yaml {
+        Some(fm_str) => {
+            // Parse, remove vaultiel, and re-serialize
+            if let Ok(mut fm) = serde_yaml::from_str::<serde_yaml::Value>(fm_str) {
+                if let serde_yaml::Value::Mapping(ref mut map) = fm {
+                    map.remove(&serde_yaml::Value::String("vaultiel".to_string()));
+                }
+
+                // Re-serialize
+                if let Ok(new_fm) = serde_yaml::to_string(&fm) {
+                    let new_fm = new_fm.trim();
+                    if new_fm == "{}" || new_fm.is_empty() {
+                        // Empty frontmatter after removing vaultiel
+                        format!("---\n---\n{}", split.content)
+                    } else {
+                        format!("---\n{}\n---\n{}", new_fm, split.content)
+                    }
+                } else {
+                    content.to_string()
+                }
+            } else {
+                content.to_string()
+            }
+        }
+        None => content.to_string(),
+    }
 }
 
 // === set-content ===

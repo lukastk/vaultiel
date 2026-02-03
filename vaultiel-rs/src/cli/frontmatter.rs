@@ -1,6 +1,6 @@
 //! Frontmatter commands implementation.
 
-use crate::cli::args::{GetFrontmatterArgs, ModifyFrontmatterArgs, OutputFormat, RemoveFrontmatterArgs};
+use crate::cli::args::{GetFrontmatterArgs, ModifyFrontmatterArgs, OutputFormat, RemoveFrontmatterArgs, RenameFrontmatterArgs};
 use crate::cli::output::{DryRunResponse, Output};
 use crate::error::{Result, VaultError};
 use crate::vault::Vault;
@@ -217,6 +217,99 @@ pub fn remove_frontmatter(vault: &Vault, args: &RemoveFrontmatterArgs, output: &
         path: path.to_string_lossy().to_string(),
         message: "Frontmatter field removed successfully".to_string(),
     };
+    output.print(&response)?;
+
+    Ok(())
+}
+
+// === rename-frontmatter ===
+
+#[derive(Debug, Serialize)]
+pub struct RenameFrontmatterResponse {
+    pub renamed: Vec<String>,
+    pub skipped: Vec<String>,
+    pub total_renamed: usize,
+}
+
+pub fn rename_frontmatter(vault: &Vault, args: &RenameFrontmatterArgs, output: &Output) -> Result<()> {
+    // Get notes to process
+    let notes = if let Some(ref pattern) = args.glob {
+        vault.list_notes_matching(pattern)?
+    } else {
+        vault.list_notes()?
+    };
+
+    let mut renamed: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+
+    for note_path in notes {
+        let note = match vault.load_note(&note_path) {
+            Ok(n) => n,
+            Err(_) => {
+                skipped.push(note_path.to_string_lossy().to_string());
+                continue;
+            }
+        };
+
+        // Get frontmatter
+        let fm = match note.frontmatter() {
+            Ok(Some(f)) => f,
+            _ => {
+                // No frontmatter, skip
+                continue;
+            }
+        };
+
+        // Check if the old key exists
+        let has_old_key = if let YamlValue::Mapping(ref map) = fm {
+            map.get(YamlValue::String(args.from.clone())).is_some()
+        } else {
+            false
+        };
+
+        if !has_old_key {
+            continue;
+        }
+
+        // Check if new key already exists
+        let has_new_key = if let YamlValue::Mapping(ref map) = fm {
+            map.get(YamlValue::String(args.to.clone())).is_some()
+        } else {
+            false
+        };
+
+        if has_new_key {
+            skipped.push(format!(
+                "{} (key '{}' already exists)",
+                note_path.display(),
+                args.to
+            ));
+            continue;
+        }
+
+        // Perform the rename
+        let mut new_fm = fm.clone();
+        if let YamlValue::Mapping(ref mut map) = new_fm {
+            if let Some(value) = map.remove(&YamlValue::String(args.from.clone())) {
+                map.insert(YamlValue::String(args.to.clone()), value);
+            }
+        }
+
+        if args.dry_run {
+            renamed.push(format!("{} (dry-run)", note_path.display()));
+        } else {
+            let updated_note = note.with_frontmatter(&new_fm)?;
+            vault.save_note(&updated_note)?;
+            renamed.push(note_path.to_string_lossy().to_string());
+        }
+    }
+
+    let response = RenameFrontmatterResponse {
+        total_renamed: renamed.len(),
+        renamed,
+        skipped,
+    };
+
     output.print(&response)?;
 
     Ok(())

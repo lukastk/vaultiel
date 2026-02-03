@@ -97,7 +97,7 @@ Build the graph structure and traversal capabilities.
 - [x] `rename` - Handle heading/block references in links
 - [x] `rename` - `--no-propagate` mode (just mv)
 - [x] `rename` - `--dry-run` mode
-- [ ] `rename-frontmatter` - Rename key across notes
+- [x] `rename-frontmatter` - Rename key across notes
 
 ---
 
@@ -231,8 +231,8 @@ Stable identifiers for external integrations.
 
 ### Integration
 - [ ] Preserve vaultiel field during operations
-- [ ] `--include-vaultiel-field` flag on get-content
-- [ ] ID stability across renames
+- [x] `--include-vaultiel-field` flag on get-content
+- [x] ID stability across renames (already stable - ID is in file content)
 
 ---
 

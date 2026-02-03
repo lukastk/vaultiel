@@ -149,6 +149,10 @@ fn run(cli: &Cli) -> Result<VaultExitCode, VaultError> {
         Commands::Rename(args) => {
             rename::rename(&vault, &args.from, &args.to, args.no_propagate, args.dry_run, &output)
         }
+        Commands::RenameFrontmatter(args) => {
+            frontmatter::rename_frontmatter(&vault, args, &output)?;
+            Ok(VaultExitCode::Success)
+        }
 
         // Phase 3 commands
         Commands::GetTasks(args) => {
