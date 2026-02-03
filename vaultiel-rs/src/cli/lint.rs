@@ -2,7 +2,7 @@
 
 use crate::cli::output::Output;
 use crate::error::{ExitCode, Result};
-use crate::health::{compute_summary, format_github_actions, HealthChecker, Issue, IssueType, LintSummary};
+use crate::health::{compute_summary, fix_issue, format_github_actions, FixResult, HealthChecker, Issue, IssueType, LintSummary};
 use crate::vault::Vault;
 use serde::Serialize;
 
@@ -32,6 +32,14 @@ impl LintFormat {
     }
 }
 
+/// Output for lint fix results.
+#[derive(Debug, Serialize)]
+pub struct LintFixOutput {
+    pub issues: Vec<Issue>,
+    pub fixed: Vec<FixResult>,
+    pub summary: LintSummary,
+}
+
 /// Run lint checks on the vault.
 pub fn lint(
     vault: &Vault,
@@ -40,6 +48,7 @@ pub fn lint(
     glob_pattern: Option<&str>,
     fail_on: &[String],
     format: LintFormat,
+    fix: bool,
     output: &Output,
 ) -> Result<ExitCode> {
     // Parse issue types
@@ -75,19 +84,77 @@ pub fn lint(
 
     // Run checks
     let issues = checker.run()?;
-    let summary = compute_summary(&issues);
+
+    // Apply fixes if requested
+    let mut fix_results: Vec<FixResult> = Vec::new();
+    let mut remaining_issues = issues.clone();
+
+    if fix {
+        for issue in &issues {
+            if issue.fixable {
+                match fix_issue(vault, issue) {
+                    Ok(result) => {
+                        if result.success {
+                            // Remove fixed issue from remaining
+                            remaining_issues.retain(|i| {
+                                !(i.file == issue.file
+                                    && i.issue_type == issue.issue_type
+                                    && i.line == issue.line)
+                            });
+                        }
+                        fix_results.push(result);
+                    }
+                    Err(e) => {
+                        fix_results.push(FixResult {
+                            file: issue.file.clone(),
+                            issue_type: issue.issue_type,
+                            success: false,
+                            message: format!("Fix failed: {}", e),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    let summary = compute_summary(&remaining_issues);
 
     // Output based on format
     match format {
         LintFormat::Json => {
-            let result = LintOutput { issues: issues.clone(), summary: summary.clone() };
-            output.print(&result)?;
+            if fix && !fix_results.is_empty() {
+                let result = LintFixOutput {
+                    issues: remaining_issues.clone(),
+                    fixed: fix_results.clone(),
+                    summary: summary.clone(),
+                };
+                output.print(&result)?;
+            } else {
+                let result = LintOutput { issues: remaining_issues.clone(), summary: summary.clone() };
+                output.print(&result)?;
+            }
         }
         LintFormat::Text => {
-            if issues.is_empty() {
+            // Show fix results first
+            if !fix_results.is_empty() {
+                println!("Fixed issues:");
+                for result in &fix_results {
+                    let status = if result.success { "✓" } else { "✗" };
+                    println!(
+                        "  {} [{}] {}: {}",
+                        status,
+                        result.issue_type,
+                        result.file.display(),
+                        result.message
+                    );
+                }
+                println!();
+            }
+
+            if remaining_issues.is_empty() {
                 println!("No issues found.");
             } else {
-                for issue in &issues {
+                for issue in &remaining_issues {
                     let line_info = issue
                         .line
                         .map(|l| format!(":{}", l))
@@ -99,8 +166,8 @@ pub fn lint(
                         line_info
                     );
                     println!("  {}", issue.message);
-                    if issue.fixable {
-                        println!("  (auto-fixable)");
+                    if issue.fixable && !fix {
+                        println!("  (auto-fixable with --fix)");
                     }
                     println!();
                 }
@@ -112,13 +179,13 @@ pub fn lint(
             }
         }
         LintFormat::Github => {
-            print!("{}", format_github_actions(&issues));
+            print!("{}", format_github_actions(&remaining_issues));
         }
     }
 
-    // Check if we should fail
+    // Check if we should fail (only for remaining unfixed issues)
     if !fail_on_types.is_empty() {
-        for issue in &issues {
+        for issue in &remaining_issues {
             if fail_on_types.contains(&issue.issue_type) {
                 return Ok(ExitCode::LintIssuesFound);
             }

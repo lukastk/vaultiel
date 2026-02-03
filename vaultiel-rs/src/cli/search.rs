@@ -104,20 +104,39 @@ pub fn run(vault: &Vault, args: &SearchArgs, output: &Output) -> Result<()> {
             (score, context)
         };
 
-        // Apply tag filter
-        if !args.tag.is_empty() {
+        // Apply tag filters
+        if !args.tag.is_empty() || !args.tag_any.is_empty() || !args.no_tag.is_empty() {
             if let Ok(note) = vault.load_note(&path) {
                 let note_tags: Vec<String> = note.tags().iter().map(|t| t.name.clone()).collect();
-                let has_all_tags = args.tag.iter().all(|required_tag| {
-                    let required = if required_tag.starts_with('#') {
-                        required_tag.clone()
-                    } else {
-                        format!("#{}", required_tag)
-                    };
-                    note_tags.iter().any(|t| t == &required || t.starts_with(&format!("{}/", required)))
-                });
-                if !has_all_tags {
-                    continue;
+
+                // --tag: must have ALL specified tags (AND logic)
+                if !args.tag.is_empty() {
+                    let has_all_tags = args.tag.iter().all(|required_tag| {
+                        tag_matches(&note_tags, required_tag)
+                    });
+                    if !has_all_tags {
+                        continue;
+                    }
+                }
+
+                // --tag-any: must have AT LEAST ONE of the specified tags (OR logic)
+                if !args.tag_any.is_empty() {
+                    let has_any_tag = args.tag_any.iter().any(|required_tag| {
+                        tag_matches(&note_tags, required_tag)
+                    });
+                    if !has_any_tag {
+                        continue;
+                    }
+                }
+
+                // --no-tag: must NOT have any of the specified tags
+                if !args.no_tag.is_empty() {
+                    let has_excluded_tag = args.no_tag.iter().any(|excluded_tag| {
+                        tag_matches(&note_tags, excluded_tag)
+                    });
+                    if has_excluded_tag {
+                        continue;
+                    }
                 }
             } else {
                 continue;
@@ -276,6 +295,21 @@ fn fuzzy_score(query: &str, text: &str) -> f64 {
             0.0
         }
     }
+}
+
+/// Check if a note's tags match a required tag.
+/// Supports nested tags: `project` matches `#project` and `#project/foo`.
+fn tag_matches(note_tags: &[String], required_tag: &str) -> bool {
+    let required = if required_tag.starts_with('#') {
+        required_tag.to_lowercase()
+    } else {
+        format!("#{}", required_tag.to_lowercase())
+    };
+
+    note_tags.iter().any(|t| {
+        let tag_lower = t.to_lowercase();
+        tag_lower == required || tag_lower.starts_with(&format!("{}/", required))
+    })
 }
 
 /// Extract context around a match in content.

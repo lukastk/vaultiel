@@ -409,6 +409,136 @@ pub fn compute_summary(issues: &[Issue]) -> LintSummary {
     }
 }
 
+/// Result of fixing an issue.
+#[derive(Debug, Clone, Serialize)]
+pub struct FixResult {
+    pub file: PathBuf,
+    pub issue_type: IssueType,
+    pub success: bool,
+    pub message: String,
+}
+
+/// Fix a single issue.
+pub fn fix_issue(vault: &Vault, issue: &Issue) -> crate::error::Result<FixResult> {
+    match issue.issue_type {
+        IssueType::MissingFrontmatter => fix_missing_frontmatter(vault, issue),
+        IssueType::DuplicateBlockIds => fix_duplicate_block_id(vault, issue),
+        _ => Ok(FixResult {
+            file: issue.file.clone(),
+            issue_type: issue.issue_type,
+            success: false,
+            message: "This issue type cannot be auto-fixed".to_string(),
+        }),
+    }
+}
+
+/// Fix missing frontmatter by adding an empty frontmatter block.
+fn fix_missing_frontmatter(vault: &Vault, issue: &Issue) -> crate::error::Result<FixResult> {
+    let note = vault.load_note(&issue.file)?;
+
+    // Check if it really has no frontmatter
+    if note.frontmatter_raw().is_some() {
+        return Ok(FixResult {
+            file: issue.file.clone(),
+            issue_type: issue.issue_type,
+            success: false,
+            message: "Note already has frontmatter".to_string(),
+        });
+    }
+
+    // Add empty frontmatter at the beginning
+    let new_content = format!("---\n---\n\n{}", note.content);
+
+    // Write the file
+    let full_path = vault.root.join(&issue.file);
+    std::fs::write(&full_path, new_content)?;
+
+    Ok(FixResult {
+        file: issue.file.clone(),
+        issue_type: issue.issue_type,
+        success: true,
+        message: "Added empty frontmatter block".to_string(),
+    })
+}
+
+/// Fix duplicate block ID by renaming with a suffix.
+fn fix_duplicate_block_id(vault: &Vault, issue: &Issue) -> crate::error::Result<FixResult> {
+    let Some(ref block_id) = issue.target else {
+        return Ok(FixResult {
+            file: issue.file.clone(),
+            issue_type: issue.issue_type,
+            success: false,
+            message: "No block ID specified".to_string(),
+        });
+    };
+
+    let Some(line_num) = issue.line else {
+        return Ok(FixResult {
+            file: issue.file.clone(),
+            issue_type: issue.issue_type,
+            success: false,
+            message: "No line number specified".to_string(),
+        });
+    };
+
+    let note = vault.load_note(&issue.file)?;
+    let lines: Vec<&str> = note.content.lines().collect();
+
+    if line_num == 0 || line_num > lines.len() {
+        return Ok(FixResult {
+            file: issue.file.clone(),
+            issue_type: issue.issue_type,
+            success: false,
+            message: "Invalid line number".to_string(),
+        });
+    }
+
+    let line = lines[line_num - 1];
+    let block_ref = format!("^{}", block_id);
+
+    if !line.contains(&block_ref) {
+        return Ok(FixResult {
+            file: issue.file.clone(),
+            issue_type: issue.issue_type,
+            success: false,
+            message: format!("Block ID ^{} not found on line {}", block_id, line_num),
+        });
+    }
+
+    // Find a unique suffix
+    let mut suffix = 1;
+    let mut new_block_id = format!("{}-{}", block_id, suffix);
+    let content_lower = note.content.to_lowercase();
+    while content_lower.contains(&format!("^{}", new_block_id.to_lowercase())) {
+        suffix += 1;
+        new_block_id = format!("{}-{}", block_id, suffix);
+    }
+
+    // Replace on this specific line
+    let new_line = line.replace(&block_ref, &format!("^{}", new_block_id));
+    let mut new_lines: Vec<&str> = lines.clone();
+    let new_line_owned = new_line.clone();
+    new_lines[line_num - 1] = &new_line_owned;
+
+    // Rebuild content preserving original line endings
+    let new_content = if note.content.contains("\r\n") {
+        new_lines.join("\r\n")
+    } else {
+        new_lines.join("\n")
+    };
+
+    // Write the file
+    let full_path = vault.root.join(&issue.file);
+    std::fs::write(&full_path, new_content)?;
+
+    Ok(FixResult {
+        file: issue.file.clone(),
+        issue_type: issue.issue_type,
+        success: true,
+        message: format!("Renamed ^{} to ^{}", block_id, new_block_id),
+    })
+}
+
 /// Format issues as GitHub Actions annotations.
 pub fn format_github_actions(issues: &[Issue]) -> String {
     let mut output = String::new();

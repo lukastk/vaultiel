@@ -322,9 +322,17 @@ pub struct SearchArgs {
     #[arg(long)]
     pub frontmatter: Vec<String>,
 
-    /// Filter by tag
+    /// Filter by tag (repeatable, AND logic - must have all)
     #[arg(long)]
     pub tag: Vec<String>,
+
+    /// Filter by any of these tags (repeatable, OR logic - must have at least one)
+    #[arg(long)]
+    pub tag_any: Vec<String>,
+
+    /// Exclude notes with this tag (repeatable)
+    #[arg(long)]
+    pub no_tag: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]

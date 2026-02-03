@@ -220,6 +220,7 @@ fn run(cli: &Cli) -> Result<VaultExitCode, VaultError> {
                 args.glob.as_deref(),
                 &args.fail_on,
                 format,
+                args.fix,
                 &output,
             )
         }

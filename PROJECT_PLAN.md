@@ -79,7 +79,7 @@ Build the graph structure and traversal capabilities.
 - [x] `get-tags` - All tags in vault
 - [x] `get-tags` - With counts (`--with-counts`)
 - [x] `get-tags` - Nested hierarchy output (`--nested`)
-- [ ] `search` - Tag filtering (`--tag`, `--tag-any`, `--no-tag`)
+- [x] `search` - Tag filtering (`--tag`, `--tag-any`, `--no-tag`)
 
 ### Commands: Block Operations
 - [x] `get-blocks` - List block IDs in a note
@@ -166,7 +166,7 @@ Linting and diagnostics.
 - [x] `lint` - Run all checks
 - [x] `lint` - Filter checks (`--only`, `--ignore`)
 - [x] `lint` - Scope to notes (`--glob`)
-- [ ] `lint` - Auto-fix (`--fix`)
+- [x] `lint` - Auto-fix (`--fix`)
 - [x] `lint` - CI mode (`--fail-on`)
 - [x] `lint` - GitHub Actions output (`--format github`)
 - [x] `find-orphans` - Shorthand with `--exclude` support
