@@ -205,8 +205,18 @@ impl Config {
         })
     }
 
-    /// Returns the default config file path (~/.config/vaultiel.toml).
+    /// Returns the config file path.
+    /// Checks ~/.config/vaultiel.toml first, then falls back to OS-specific config dir.
     pub fn default_config_path() -> PathBuf {
+        // Prefer ~/.config/vaultiel.toml (works consistently across platforms)
+        if let Some(home) = dirs::home_dir() {
+            let xdg_path = home.join(".config").join("vaultiel.toml");
+            if xdg_path.exists() {
+                return xdg_path;
+            }
+        }
+
+        // Fall back to OS-specific config dir (~/Library/Application Support on macOS)
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("vaultiel.toml")
