@@ -421,6 +421,26 @@ impl VaultCache {
         Ok(total)
     }
 
+    /// Ensure the cache is up-to-date.
+    /// Returns true if the cache was already valid and usable.
+    /// Returns false if we had to build/update the cache.
+    pub fn ensure_current(&mut self, vault: &Vault, task_config: &TaskConfig) -> Result<bool> {
+        // If cache is empty, do a full rebuild
+        if self.notes.is_empty() {
+            self.rebuild(vault, task_config, false)?;
+            return Ok(false);
+        }
+
+        // Otherwise do incremental update
+        let updated = self.update(vault, task_config, false)?;
+        Ok(updated == 0)
+    }
+
+    /// Check if the cache has any indexed notes.
+    pub fn has_data(&self) -> bool {
+        !self.notes.is_empty()
+    }
+
     /// Get cache status.
     pub fn status(&self, vault: &Vault) -> Result<CacheStatus> {
         let stale_notes = self.find_stale_notes(vault)?.len();

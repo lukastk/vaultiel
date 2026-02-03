@@ -169,6 +169,55 @@ impl LinkIndex {
     pub fn remove(&mut self, path: &PathBuf) {
         self.by_source.remove(path);
     }
+
+    /// Get all links pointing to a target note.
+    /// This scans all outgoing links to find incoming ones.
+    pub fn get_incoming(&self, target: &PathBuf) -> Vec<&CachedLink> {
+        // Get the target note name (without extension)
+        let target_stem = target
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        // Also get full path without extension for exact matching
+        let target_path_lower = target
+            .to_string_lossy()
+            .to_lowercase()
+            .strip_suffix(".md")
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| target.to_string_lossy().to_lowercase());
+
+        let mut incoming = Vec::new();
+        for links in self.by_source.values() {
+            for link in links {
+                // Normalize the link target (remove .md if present)
+                let link_target_lower = link.target.to_lowercase();
+                let link_target_normalized = link_target_lower
+                    .strip_suffix(".md")
+                    .unwrap_or(&link_target_lower);
+
+                // Match by full path or just the note name
+                // Wikilinks can be [[Note]] or [[folder/Note]]
+                let link_target_stem = std::path::Path::new(link_target_normalized)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(link_target_normalized);
+
+                if link_target_normalized == target_path_lower
+                    || link_target_stem == target_stem
+                {
+                    incoming.push(link);
+                }
+            }
+        }
+        incoming
+    }
+
+    /// Check if the index is empty.
+    pub fn is_empty(&self) -> bool {
+        self.by_source.is_empty()
+    }
 }
 
 /// The tag index.

@@ -74,52 +74,52 @@ echo
 
 # --- All Tasks ---
 echo "--- All Tasks in Vault ---"
-vaultiel --vault "$VAULT" get-tasks | jq 'length'
+vaultiel --vault "$VAULT" get-tasks | jq '.tasks | length'
 echo "total tasks found"
 echo
 
 # --- Incomplete Tasks ---
 echo "--- Incomplete Tasks ([ ]) ---"
-vaultiel --vault "$VAULT" get-tasks --symbol "[ ]" | jq '.[].description'
+vaultiel --vault "$VAULT" get-tasks --symbol "[ ]" | jq '.tasks[].description'
 echo
 
 # --- Tasks Due Today ---
 echo "--- Tasks Due Today ---"
-vaultiel --vault "$VAULT" get-tasks --due-on "$TODAY" | jq '.[] | {file: .file, description: .description, priority: .priority}'
+vaultiel --vault "$VAULT" get-tasks --due-on "$TODAY" | jq '.tasks[] | {file: .location.file, description: .description, priority: .priority}'
 echo
 
 # --- High Priority Tasks ---
 echo "--- High Priority Tasks ---"
-vaultiel --vault "$VAULT" get-tasks --priority high | jq '.[] | {file: .file, description: .description}'
+vaultiel --vault "$VAULT" get-tasks --priority high | jq '.tasks[] | {file: .location.file, description: .description}'
 echo
 
 # --- Tasks in Specific Note ---
 echo "--- Tasks in Project Alpha ---"
-vaultiel --vault "$VAULT" get-tasks --note "Project Alpha.md" | jq '.[] | {description: .description, symbol: .symbol}'
+vaultiel --vault "$VAULT" get-tasks --note "Project Alpha.md" | jq '.tasks[] | {description: .description, symbol: .symbol}'
 echo
 
 # --- Tasks with Block References ---
 echo "--- Tasks with Block IDs ---"
-vaultiel --vault "$VAULT" get-tasks --has-block-ref | jq '.[] | {description: .description, block_id: .block_id}'
+vaultiel --vault "$VAULT" get-tasks --has-block-ref | jq '.tasks[] | {description: .description, block_id: .block_id}'
 echo
 
 # --- Tasks Linking to a Note ---
 echo "--- Tasks Linking to Project Alpha ---"
-vaultiel --vault "$VAULT" get-tasks --links-to "Project Alpha.md" | jq '.[] | {file: .file, description: .description}'
+vaultiel --vault "$VAULT" get-tasks --links-to "Project Alpha.md" | jq '.tasks[] | {file: .location.file, description: .description}'
 echo
 
 # --- Scheduled Tasks ---
 echo "--- Tasks Scheduled for Today ---"
-vaultiel --vault "$VAULT" get-tasks --scheduled-on "$TODAY" | jq '.[] | {description: .description}'
+vaultiel --vault "$VAULT" get-tasks --scheduled-on "$TODAY" | jq '.tasks[] | {description: .description}'
 echo
 
 # --- Flat vs Hierarchical ---
 echo "--- Hierarchical Task View (default) ---"
-vaultiel --vault "$VAULT" get-tasks --note "Project Alpha.md" | jq '.[0] | {description: .description, children: [.children[].description]}'
+vaultiel --vault "$VAULT" get-tasks --note "Project Alpha.md" | jq '.tasks[0] | {description: .description, children: [.children[]?.description]}'
 echo
 
 echo "--- Flat Task View ---"
-vaultiel --vault "$VAULT" get-tasks --note "Project Alpha.md" --flat | jq '.[] | {description: .description, indent: .indent}'
+vaultiel --vault "$VAULT" get-tasks --note "Project Alpha.md" --flat | jq '.tasks[] | {description: .description, indent: .indent}'
 echo
 
 # --- Format a New Task ---

@@ -83,7 +83,7 @@ echo
 
 # --- Basic Neo4j Cypher Export ---
 echo "--- Neo4j Cypher Export (Basic) ---"
-vaultiel --vault "$VAULT" export-graph --format neo4j-cypher --output "$OUTPUT_DIR/basic.cypher"
+vaultiel --vault "$VAULT" export-graph --format cypher --output "$OUTPUT_DIR/basic.cypher"
 echo "Exported to: $OUTPUT_DIR/basic.cypher"
 echo
 echo "Preview:"
@@ -93,7 +93,7 @@ echo
 
 # --- Neo4j with MERGE (idempotent) ---
 echo "--- Neo4j Cypher Export (with MERGE) ---"
-vaultiel --vault "$VAULT" export-graph --format neo4j-cypher --use-merge --output "$OUTPUT_DIR/merge.cypher"
+vaultiel --vault "$VAULT" export-graph --format cypher --use-merge --output "$OUTPUT_DIR/merge.cypher"
 echo "Exported to: $OUTPUT_DIR/merge.cypher"
 echo
 echo "Preview (showing MERGE statements):"
@@ -102,7 +102,7 @@ echo
 
 # --- Neo4j with Tags ---
 echo "--- Neo4j Cypher Export (with Tags) ---"
-vaultiel --vault "$VAULT" export-graph --format neo4j-cypher --include-tags --output "$OUTPUT_DIR/with-tags.cypher"
+vaultiel --vault "$VAULT" export-graph --format cypher --include-tags --output "$OUTPUT_DIR/with-tags.cypher"
 echo "Exported to: $OUTPUT_DIR/with-tags.cypher"
 echo
 echo "Tag nodes:"
@@ -111,7 +111,7 @@ echo
 
 # --- Neo4j with Frontmatter ---
 echo "--- Neo4j Cypher Export (with Frontmatter) ---"
-vaultiel --vault "$VAULT" export-graph --format neo4j-cypher --include-frontmatter --output "$OUTPUT_DIR/with-frontmatter.cypher"
+vaultiel --vault "$VAULT" export-graph --format cypher --include-frontmatter --output "$OUTPUT_DIR/with-frontmatter.cypher"
 echo "Exported to: $OUTPUT_DIR/with-frontmatter.cypher"
 echo
 echo "Preview (showing properties):"
@@ -154,7 +154,7 @@ echo
 
 # --- Output to stdout (for piping) ---
 echo "--- Export to stdout (pipe to other tools) ---"
-echo "Example: vaultiel export-graph --format neo4j-cypher | cypher-shell"
+echo "Example: vaultiel export-graph --format cypher | cypher-shell"
 echo
 vaultiel --vault "$VAULT" export-graph --format json-ld 2>/dev/null | jq 'keys'
 echo
