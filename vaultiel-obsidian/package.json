@@ -1,0 +1,27 @@
+{
+  "name": "@vaultiel/obsidian",
+  "version": "0.1.0",
+  "description": "Vaultiel vault API backed by Obsidian's native APIs",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "obsidian": ">=1.4.0"
+  },
+  "dependencies": {
+    "picomatch": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/picomatch": "^3.0.0",
+    "obsidian": "^1.7.2",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
