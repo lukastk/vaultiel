@@ -495,6 +495,50 @@ mod get_tasks_command {
             assert!(task["block_id"].is_string());
         }
     }
+
+    #[test]
+    fn get_tasks_links_to_filter() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["get-tasks", "--links-to", "User Auth", "--flat"]);
+        assert_eq!(code, 0);
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let tasks = json["tasks"].as_array().unwrap();
+        assert!(!tasks.is_empty());
+        // All returned tasks should link to User Auth
+        for task in tasks {
+            let links = task["links"].as_array().unwrap();
+            let has_target = links.iter().any(|l| l["to"].as_str().unwrap() == "User Auth");
+            assert!(has_target, "Task should link to User Auth: {}", task["description"]);
+        }
+    }
+
+    #[test]
+    fn get_tasks_links_to_no_match() {
+        let (stdout, _, code) = run_vaultiel("tasks", &["get-tasks", "--links-to", "Nonexistent Note", "--flat"]);
+        assert_eq!(code, 0);
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let tasks = json["tasks"].as_array().unwrap();
+        assert!(tasks.is_empty());
+    }
+
+    #[test]
+    fn get_tasks_links_populated() {
+        // Verify that task links contain correct data from the tasks fixture
+        let (stdout, _, code) = run_vaultiel("tasks", &["get-tasks", "--flat"]);
+        assert_eq!(code, 0);
+        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let tasks = json["tasks"].as_array().unwrap();
+        // Find the task that links to Code Review with alias
+        let code_review_task = tasks.iter().find(|t| {
+            t["links"].as_array().map_or(false, |links| {
+                links.iter().any(|l| l["to"].as_str().unwrap() == "Code Review")
+            })
+        });
+        assert!(code_review_task.is_some(), "Should find task linking to Code Review");
+        let task = code_review_task.unwrap();
+        let link = task["links"].as_array().unwrap().iter()
+            .find(|l| l["to"].as_str().unwrap() == "Code Review").unwrap();
+        assert_eq!(link["alias"].as_str().unwrap(), "PR #123");
+    }
 }
 
 mod format_task_command {

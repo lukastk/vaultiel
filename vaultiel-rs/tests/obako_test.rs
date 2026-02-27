@@ -809,6 +809,74 @@ mod inspect_command {
 }
 
 // ============================================================================
+// Task links
+// ============================================================================
+
+mod task_links {
+    use super::*;
+
+    #[test]
+    fn links_populated_in_tasks() {
+        let (stdout, _, code) = run_vaultiel("obako", &["get-tasks", "--note", "Mixed Task Note.md", "--flat"]);
+        assert_eq!(code, 0);
+        let json = parse_json(&stdout);
+        let tasks = json["tasks"].as_array().expect("tasks should be array");
+
+        // Find the task that links to proj/Active Project
+        let linking_task = tasks.iter().find(|t| {
+            t["links"].as_array().map_or(false, |links| {
+                links.iter().any(|l| l["to"].as_str().unwrap() == "proj/Active Project")
+            })
+        });
+        assert!(linking_task.is_some(), "should find a task linking to proj/Active Project");
+    }
+
+    #[test]
+    fn links_to_filter_obako() {
+        let (stdout, _, code) = run_vaultiel("obako", &[
+            "get-tasks", "--links-to", "proj/Active Project", "--flat"
+        ]);
+        assert_eq!(code, 0);
+        let json = parse_json(&stdout);
+        let tasks = json["tasks"].as_array().expect("tasks should be array");
+        // Mixed Task Note has 2 tasks linking to proj/Active Project
+        assert!(tasks.len() >= 2, "should find at least 2 tasks linking to proj/Active Project, got {}", tasks.len());
+        for task in tasks {
+            let links = task["links"].as_array().unwrap();
+            let has_target = links.iter().any(|l| {
+                l["to"].as_str().unwrap().to_lowercase().contains("active project")
+            });
+            assert!(has_target, "task should link to Active Project: {}", task["description"]);
+        }
+    }
+
+    #[test]
+    fn links_to_filter_memo() {
+        let (stdout, _, code) = run_vaultiel("obako", &[
+            "get-tasks", "--links-to", "memo/Design decision", "--flat"
+        ]);
+        assert_eq!(code, 0);
+        let json = parse_json(&stdout);
+        let tasks = json["tasks"].as_array().expect("tasks should be array");
+        assert_eq!(tasks.len(), 1, "should find 1 task linking to memo/Design decision");
+        assert!(tasks[0]["description"].as_str().unwrap().contains("Design decision"));
+    }
+
+    #[test]
+    fn task_link_alias_preserved() {
+        // In Project Tasks fixture, "Review [[Code Review|PR #123]]" has an alias
+        let (stdout, _, code) = run_vaultiel("tasks", &["get-tasks", "--links-to", "Code Review", "--flat"]);
+        assert_eq!(code, 0);
+        let json = parse_json(&stdout);
+        let tasks = json["tasks"].as_array().expect("tasks should be array");
+        assert_eq!(tasks.len(), 1);
+        let link = tasks[0]["links"].as_array().unwrap().iter()
+            .find(|l| l["to"].as_str().unwrap() == "Code Review").unwrap();
+        assert_eq!(link["alias"].as_str().unwrap(), "PR #123");
+    }
+}
+
+// ============================================================================
 // Consolidation fields
 // ============================================================================
 

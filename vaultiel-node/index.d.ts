@@ -44,6 +44,12 @@ export interface BlockId {
   blockType: string;
 }
 
+/** A link found within a task's description. */
+export interface TaskLink {
+  to: string;
+  alias?: string;
+}
+
 /** A task found in content. */
 export interface Task {
   file: string;
@@ -55,7 +61,15 @@ export interface Task {
   scheduled?: string;
   due?: string;
   done?: string;
+  start?: string;
+  created?: string;
+  cancelled?: string;
+  recurrence?: string;
+  onCompletion?: string;
+  id?: string;
+  dependsOn: string[];
   priority?: string;
+  links: TaskLink[];
   tags: string[];
   blockId?: string;
 }
@@ -183,8 +197,9 @@ export class Vault {
   /**
    * Parse tasks from a note.
    * @param path - Note path.
+   * @param linksTo - Optional: only return tasks linking to this note.
    */
-  getTasks(path: string): Task[];
+  getTasks(path: string, linksTo?: string): Task[];
 
   /**
    * Get incoming links to a note.

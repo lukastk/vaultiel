@@ -115,6 +115,23 @@ impl BlockId {
     }
 }
 
+/// A link found within a task's description.
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct TaskLink {
+    #[pyo3(get)]
+    pub to: String,
+    #[pyo3(get)]
+    pub alias: Option<String>,
+}
+
+#[pymethods]
+impl TaskLink {
+    fn __repr__(&self) -> String {
+        format!("TaskLink(to='{}', alias={:?})", self.to, self.alias)
+    }
+}
+
 /// A task found in a note.
 #[pyclass]
 #[derive(Debug, Clone)]
@@ -153,6 +170,8 @@ pub struct Task {
     pub depends_on: Vec<String>,
     #[pyo3(get)]
     pub priority: Option<String>,
+    #[pyo3(get)]
+    pub links: Vec<TaskLink>,
     #[pyo3(get)]
     pub tags: Vec<String>,
     #[pyo3(get)]
@@ -522,14 +541,16 @@ impl PyVault {
             .collect())
     }
 
-    /// Get all tasks from a note.
+    /// Get all tasks from a note, optionally filtering to tasks linking to a specific note.
     ///
     /// Args:
     ///     path: Path to the note.
+    ///     links_to: Optional note path to filter tasks by (only tasks linking to this note).
     ///
     /// Returns:
     ///     List of Task objects found in the note.
-    pub fn get_tasks(&self, path: String) -> PyResult<Vec<Task>> {
+    #[pyo3(signature = (path, links_to=None))]
+    pub fn get_tasks(&self, path: String, links_to: Option<String>) -> PyResult<Vec<Task>> {
         let note_path = self.vault.normalize_note_path(&path);
         let note = self.vault.load_note(&note_path)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
@@ -537,7 +558,18 @@ impl PyVault {
         let task_config = ::vaultiel::config::TaskConfig::default();
         let tasks = parse_tasks(&note.content, &note_path, &task_config);
 
-        Ok(tasks
+        let filtered: Vec<_> = if let Some(ref target) = links_to {
+            let target_normalized = target.trim_end_matches(".md").to_lowercase();
+            tasks.into_iter().filter(|t| {
+                t.links.iter().any(|link| {
+                    link.to.trim_end_matches(".md").to_lowercase() == target_normalized
+                })
+            }).collect()
+        } else {
+            tasks
+        };
+
+        Ok(filtered
             .into_iter()
             .map(|t| Task {
                 file: t.location.file.to_string_lossy().to_string(),
@@ -557,6 +589,10 @@ impl PyVault {
                 id: t.id,
                 depends_on: t.depends_on,
                 priority: t.priority.map(|p| format!("{:?}", p).to_lowercase()),
+                links: t.links.into_iter().map(|l| TaskLink {
+                    to: l.to,
+                    alias: l.alias,
+                }).collect(),
                 tags: t.tags,
                 block_id: t.block_id,
             })
@@ -886,6 +922,7 @@ fn vaultiel_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Heading>()?;
     m.add_class::<BlockId>()?;
     m.add_class::<Task>()?;
+    m.add_class::<TaskLink>()?;
     m.add_class::<VaultielMetadata>()?;
     m.add_class::<LinkRef>()?;
     m.add_function(wrap_pyfunction!(parse_links, m)?)?;

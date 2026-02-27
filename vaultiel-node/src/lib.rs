@@ -66,6 +66,13 @@ pub struct JsBlockId {
 
 #[napi(object)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsTaskLink {
+    pub to: String,
+    pub alias: Option<String>,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsTask {
     pub file: String,
     pub line: u32,
@@ -84,6 +91,7 @@ pub struct JsTask {
     pub id: Option<String>,
     pub depends_on: Vec<String>,
     pub priority: Option<String>,
+    pub links: Vec<JsTaskLink>,
     pub tags: Vec<String>,
     pub block_id: Option<String>,
 }
@@ -307,9 +315,9 @@ impl JsVault {
             .collect())
     }
 
-    /// Parse tasks from a note.
+    /// Parse tasks from a note, optionally filtering to tasks linking to a specific note.
     #[napi]
-    pub fn get_tasks(&self, path: String) -> Result<Vec<JsTask>> {
+    pub fn get_tasks(&self, path: String, links_to: Option<String>) -> Result<Vec<JsTask>> {
         let note_path = self.vault.normalize_note_path(&path);
         let note = self.vault.load_note(&note_path)
             .map_err(|e| Error::from_reason(e.to_string()))?;
@@ -317,7 +325,18 @@ impl JsVault {
         let task_config = vaultiel::config::TaskConfig::default();
         let tasks = parse_tasks(&note.content, &note_path, &task_config);
 
-        Ok(tasks
+        let filtered: Vec<_> = if let Some(ref target) = links_to {
+            let target_normalized = target.trim_end_matches(".md").to_lowercase();
+            tasks.into_iter().filter(|t| {
+                t.links.iter().any(|link| {
+                    link.to.trim_end_matches(".md").to_lowercase() == target_normalized
+                })
+            }).collect()
+        } else {
+            tasks
+        };
+
+        Ok(filtered
             .into_iter()
             .map(|t| JsTask {
                 file: t.location.file.to_string_lossy().to_string(),
@@ -337,6 +356,10 @@ impl JsVault {
                 id: t.id,
                 depends_on: t.depends_on,
                 priority: t.priority.map(|p| format!("{:?}", p).to_lowercase()),
+                links: t.links.into_iter().map(|l| JsTaskLink {
+                    to: l.to,
+                    alias: l.alias,
+                }).collect(),
                 tags: t.tags,
                 block_id: t.block_id,
             })
