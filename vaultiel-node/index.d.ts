@@ -233,6 +233,43 @@ export class Vault {
    * @returns Note path or null if not found.
    */
   findById(id: string): string | null;
+
+  /**
+   * Set the full content of a note (replaces everything).
+   * @param path - Note path.
+   * @param content - New content.
+   */
+  setContent(path: string, content: string): void;
+
+  /**
+   * Modify a single frontmatter field.
+   * @param path - Note path.
+   * @param key - Frontmatter key.
+   * @param value - New value (serialized as YAML string).
+   */
+  modifyFrontmatter(path: string, key: string, value: string): void;
+
+  /**
+   * Append content to a note.
+   * @param path - Note path.
+   * @param content - Content to append.
+   */
+  appendContent(path: string, content: string): void;
+
+  /**
+   * Replace first occurrence of a pattern in note content.
+   * @param path - Note path.
+   * @param pattern - String to find.
+   * @param replacement - String to replace with.
+   */
+  replaceContent(path: string, pattern: string, replacement: string): void;
+
+  /**
+   * Inspect a note — returns full JSON representation.
+   * @param path - Note path.
+   * @returns JSON string with frontmatter, links, tags, headings, tasks, inline_attrs, stats.
+   */
+  inspect(path: string): string;
 }
 
 /**
