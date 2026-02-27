@@ -12,6 +12,7 @@ pub mod export;
 pub mod frontmatter;
 pub mod headings;
 pub mod info;
+pub mod inspect;
 pub mod links;
 pub mod lint;
 pub mod list;

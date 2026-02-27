@@ -38,6 +38,27 @@ pub struct TasksConfig {
     #[serde(default = "default_done_symbol")]
     pub done: String,
 
+    #[serde(default = "default_start_symbol")]
+    pub start: String,
+
+    #[serde(default = "default_created_symbol")]
+    pub created: String,
+
+    #[serde(default = "default_cancelled_symbol")]
+    pub cancelled: String,
+
+    #[serde(default = "default_recurrence_symbol")]
+    pub recurrence: String,
+
+    #[serde(default = "default_on_completion_symbol")]
+    pub on_completion: String,
+
+    #[serde(default = "default_depends_on_symbol")]
+    pub depends_on: String,
+
+    #[serde(default = "default_id_symbol")]
+    pub id: String,
+
     #[serde(default = "default_priority_highest_symbol")]
     pub priority_highest: String,
 
@@ -64,6 +85,13 @@ impl Default for TasksConfig {
             due: default_due_symbol(),
             scheduled: default_scheduled_symbol(),
             done: default_done_symbol(),
+            start: default_start_symbol(),
+            created: default_created_symbol(),
+            cancelled: default_cancelled_symbol(),
+            recurrence: default_recurrence_symbol(),
+            on_completion: default_on_completion_symbol(),
+            depends_on: default_depends_on_symbol(),
+            id: default_id_symbol(),
             priority_highest: default_priority_highest_symbol(),
             priority_high: default_priority_high_symbol(),
             priority_medium: default_priority_medium_symbol(),
@@ -82,6 +110,27 @@ fn default_scheduled_symbol() -> String {
 }
 fn default_done_symbol() -> String {
     "✅".to_string()
+}
+fn default_start_symbol() -> String {
+    "🛫".to_string()
+}
+fn default_created_symbol() -> String {
+    "➕".to_string()
+}
+fn default_cancelled_symbol() -> String {
+    "❌".to_string()
+}
+fn default_recurrence_symbol() -> String {
+    "🔁".to_string()
+}
+fn default_on_completion_symbol() -> String {
+    "🏁".to_string()
+}
+fn default_depends_on_symbol() -> String {
+    "⛔".to_string()
+}
+fn default_id_symbol() -> String {
+    "🆔".to_string()
 }
 fn default_priority_highest_symbol() -> String {
     "🔺".to_string()
@@ -105,6 +154,13 @@ pub struct TaskConfig {
     pub due: String,
     pub scheduled: String,
     pub done: String,
+    pub start: String,
+    pub created: String,
+    pub cancelled: String,
+    pub recurrence: String,
+    pub on_completion: String,
+    pub depends_on: String,
+    pub id: String,
     pub priority_highest: String,
     pub priority_high: String,
     pub priority_medium: String,
@@ -119,6 +175,13 @@ impl Default for TaskConfig {
             due: default_due_symbol(),
             scheduled: default_scheduled_symbol(),
             done: default_done_symbol(),
+            start: default_start_symbol(),
+            created: default_created_symbol(),
+            cancelled: default_cancelled_symbol(),
+            recurrence: default_recurrence_symbol(),
+            on_completion: default_on_completion_symbol(),
+            depends_on: default_depends_on_symbol(),
+            id: default_id_symbol(),
             priority_highest: default_priority_highest_symbol(),
             priority_high: default_priority_high_symbol(),
             priority_medium: default_priority_medium_symbol(),
@@ -135,6 +198,13 @@ impl From<&TasksConfig> for TaskConfig {
             due: config.due.clone(),
             scheduled: config.scheduled.clone(),
             done: config.done.clone(),
+            start: config.start.clone(),
+            created: config.created.clone(),
+            cancelled: config.cancelled.clone(),
+            recurrence: config.recurrence.clone(),
+            on_completion: config.on_completion.clone(),
+            depends_on: config.depends_on.clone(),
+            id: config.id.clone(),
             priority_highest: config.priority_highest.clone(),
             priority_high: config.priority_high.clone(),
             priority_medium: config.priority_medium.clone(),

@@ -115,6 +115,13 @@ fn parse_task_line(
         scheduled: metadata.scheduled,
         due: metadata.due,
         done: metadata.done,
+        start: metadata.start,
+        created: metadata.created,
+        cancelled: metadata.cancelled,
+        recurrence: metadata.recurrence,
+        on_completion: metadata.on_completion,
+        id: metadata.id,
+        depends_on: metadata.depends_on,
         priority: metadata.priority,
         custom: metadata.custom,
         links,
@@ -155,8 +162,56 @@ struct TaskMetadata {
     scheduled: Option<String>,
     due: Option<String>,
     done: Option<String>,
+    start: Option<String>,
+    created: Option<String>,
+    cancelled: Option<String>,
+    recurrence: Option<String>,
+    on_completion: Option<String>,
+    id: Option<String>,
+    depends_on: Vec<String>,
     priority: Option<Priority>,
     custom: HashMap<String, String>,
+}
+
+/// Extract a date field: find emoji, extract ISO date after it, remove from string.
+fn extract_date_field(remaining: &mut String, emoji: &str) -> Option<String> {
+    if let Some(pos) = remaining.find(emoji) {
+        let after = &remaining[pos + emoji.len()..];
+        if let Some(date_match) = DATE_REGEX.find(after.trim_start()) {
+            let value = date_match.as_str().to_string();
+            let trim_start = after.len() - after.trim_start().len();
+            *remaining = format!(
+                "{}{}",
+                &remaining[..pos],
+                &remaining[pos + emoji.len() + trim_start + date_match.end()..]
+            );
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// Extract a text field: find emoji, extract text until next emoji, remove from string.
+fn extract_text_field(remaining: &mut String, emoji: &str) -> Option<String> {
+    if let Some(pos) = remaining.find(emoji) {
+        let after = &remaining[pos + emoji.len()..];
+        let after_trimmed = after.trim_start();
+        // Find the next emoji (start of another field)
+        let value_end = after_trimmed
+            .find(|c: char| is_emoji_start(c))
+            .unwrap_or(after_trimmed.len());
+        let value = after_trimmed[..value_end].trim().to_string();
+        if !value.is_empty() {
+            let trim_start = after.len() - after_trimmed.len();
+            *remaining = format!(
+                "{}{}",
+                &remaining[..pos],
+                &remaining[pos + emoji.len() + trim_start + value_end..]
+            );
+            return Some(value);
+        }
+    }
+    None
 }
 
 /// Extract metadata (dates, priority, custom) from task text.
@@ -166,6 +221,13 @@ fn extract_metadata(text: &str, config: &TaskConfig) -> (String, TaskMetadata) {
         scheduled: None,
         due: None,
         done: None,
+        start: None,
+        created: None,
+        cancelled: None,
+        recurrence: None,
+        on_completion: None,
+        id: None,
+        depends_on: Vec::new(),
         priority: None,
         custom: HashMap::new(),
     };
@@ -173,75 +235,62 @@ fn extract_metadata(text: &str, config: &TaskConfig) -> (String, TaskMetadata) {
     // Extract custom metadata first (they appear before standard metadata)
     for (key, emoji) in &config.custom_metadata {
         if let Some(pos) = remaining.find(emoji) {
-            // Find the value after the emoji (up to next emoji or end)
+            // Find the value after the emoji — scope to text before next emoji
             let after_emoji = &remaining[pos + emoji.len()..];
-            if let Some(date_match) = DATE_REGEX.find(after_emoji.trim_start()) {
-                metadata.custom.insert(key.clone(), date_match.as_str().to_string());
+            let trimmed = after_emoji.trim_start();
+            let trim_start = after_emoji.len() - trimmed.len();
+
+            // Find end of immediate value (up to next emoji or whitespace-then-emoji)
+            let value_end = trimmed
+                .find(|c: char| is_emoji_start(c))
+                .unwrap_or(trimmed.len());
+            let immediate_value = trimmed[..value_end].trim();
+
+            if !immediate_value.is_empty() {
+                // Check if it's a date within the scoped value
+                let value = if let Some(date_match) = DATE_REGEX.find(immediate_value) {
+                    date_match.as_str().to_string()
+                } else {
+                    // Extract first word/token (e.g., "2h", "30m", "1")
+                    let word_end = immediate_value
+                        .find(|c: char| c.is_whitespace())
+                        .unwrap_or(immediate_value.len());
+                    immediate_value[..word_end].to_string()
+                };
+                metadata.custom.insert(key.clone(), value.clone());
+                // Remove the emoji and its value from remaining
+                let consume_len = trim_start + value_end;
                 remaining = format!(
                     "{}{}",
                     &remaining[..pos],
-                    &remaining[pos + emoji.len() + after_emoji.find(date_match.as_str()).unwrap() + date_match.len()..]
+                    &remaining[pos + emoji.len() + consume_len..]
                 );
-            } else {
-                // Try to extract non-date value (word or time like "2h", "30m")
-                let value_end = after_emoji.trim_start()
-                    .find(|c: char| c.is_whitespace() || is_emoji_start(c))
-                    .unwrap_or(after_emoji.trim_start().len());
-                if value_end > 0 {
-                    let value = after_emoji.trim_start()[..value_end].to_string();
-                    metadata.custom.insert(key.clone(), value.clone());
-                    let trim_start = after_emoji.len() - after_emoji.trim_start().len();
-                    remaining = format!(
-                        "{}{}",
-                        &remaining[..pos],
-                        &remaining[pos + emoji.len() + trim_start + value_end..]
-                    );
-                }
             }
         }
     }
 
-    // Extract scheduled date
-    if let Some(pos) = remaining.find(&config.scheduled) {
-        let after = &remaining[pos + config.scheduled.len()..];
-        if let Some(date_match) = DATE_REGEX.find(after.trim_start()) {
-            metadata.scheduled = Some(date_match.as_str().to_string());
-            let trim_start = after.len() - after.trim_start().len();
-            remaining = format!(
-                "{}{}",
-                &remaining[..pos],
-                &remaining[pos + config.scheduled.len() + trim_start + date_match.end()..]
-            );
-        }
+    // Extract text-based fields (before date fields, since they consume until next emoji)
+    // ID: single word/value
+    metadata.id = extract_text_field(&mut remaining, &config.id);
+
+    // Depends on: comma-separated IDs
+    if let Some(raw) = extract_text_field(&mut remaining, &config.depends_on) {
+        metadata.depends_on = raw.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
     }
 
-    // Extract due date
-    if let Some(pos) = remaining.find(&config.due) {
-        let after = &remaining[pos + config.due.len()..];
-        if let Some(date_match) = DATE_REGEX.find(after.trim_start()) {
-            metadata.due = Some(date_match.as_str().to_string());
-            let trim_start = after.len() - after.trim_start().len();
-            remaining = format!(
-                "{}{}",
-                &remaining[..pos],
-                &remaining[pos + config.due.len() + trim_start + date_match.end()..]
-            );
-        }
-    }
+    // Recurrence: multi-word text (e.g., "every 2 weeks")
+    metadata.recurrence = extract_text_field(&mut remaining, &config.recurrence);
 
-    // Extract done date
-    if let Some(pos) = remaining.find(&config.done) {
-        let after = &remaining[pos + config.done.len()..];
-        if let Some(date_match) = DATE_REGEX.find(after.trim_start()) {
-            metadata.done = Some(date_match.as_str().to_string());
-            let trim_start = after.len() - after.trim_start().len();
-            remaining = format!(
-                "{}{}",
-                &remaining[..pos],
-                &remaining[pos + config.done.len() + trim_start + date_match.end()..]
-            );
-        }
-    }
+    // On completion: single word (e.g., "delete")
+    metadata.on_completion = extract_text_field(&mut remaining, &config.on_completion);
+
+    // Extract date fields
+    metadata.start = extract_date_field(&mut remaining, &config.start);
+    metadata.created = extract_date_field(&mut remaining, &config.created);
+    metadata.scheduled = extract_date_field(&mut remaining, &config.scheduled);
+    metadata.due = extract_date_field(&mut remaining, &config.due);
+    metadata.cancelled = extract_date_field(&mut remaining, &config.cancelled);
+    metadata.done = extract_date_field(&mut remaining, &config.done);
 
     // Extract priority (check from highest to lowest)
     if remaining.contains(&config.priority_highest) {
@@ -269,13 +318,14 @@ fn extract_metadata(text: &str, config: &TaskConfig) -> (String, TaskMetadata) {
 
 /// Check if character is likely the start of an emoji.
 fn is_emoji_start(c: char) -> bool {
-    // Common emoji ranges
+    // Common emoji ranges used in Obsidian Tasks
     matches!(c,
+        '\u{1F100}'..='\u{1F1FF}' | // Enclosed Alphanumeric Supplement (🆔 U+1F194)
         '\u{1F300}'..='\u{1F9FF}' | // Misc Symbols, Emoticons, etc.
-        '\u{2600}'..='\u{26FF}' |   // Misc Symbols
-        '\u{2700}'..='\u{27BF}' |   // Dingbats
+        '\u{2600}'..='\u{26FF}' |   // Misc Symbols (⛔ U+26D4)
+        '\u{2700}'..='\u{27BF}' |   // Dingbats (➕ U+2795, ❌ U+274C, ✅ U+2705)
         '\u{231A}'..='\u{231B}' |   // Watch, Hourglass
-        '\u{23E9}'..='\u{23F3}'     // Various symbols
+        '\u{23E9}'..='\u{23F3}'     // Various symbols (⏳ U+23F3, ⏫ U+23EB, ⏬ U+23EC, ⏲ U+23F2)
     )
 }
 
@@ -386,43 +436,74 @@ fn add_child_to_tree(
     }
 }
 
-/// Format a task string for Obsidian.
-pub fn format_task(
-    description: &str,
-    symbol: &str,
-    scheduled: Option<&str>,
-    due: Option<&str>,
-    done: Option<&str>,
-    priority: Option<Priority>,
-    custom: &HashMap<String, String>,
-    config: &TaskConfig,
-) -> String {
-    let mut parts = vec![format!("- {} {}", symbol, description)];
+/// Parameters for formatting a task.
+#[derive(Debug)]
+pub struct FormatTaskParams<'a> {
+    pub description: &'a str,
+    pub symbol: &'a str,
+    pub scheduled: Option<&'a str>,
+    pub due: Option<&'a str>,
+    pub done: Option<&'a str>,
+    pub start: Option<&'a str>,
+    pub created: Option<&'a str>,
+    pub cancelled: Option<&'a str>,
+    pub recurrence: Option<&'a str>,
+    pub on_completion: Option<&'a str>,
+    pub id: Option<&'a str>,
+    pub depends_on: &'a [String],
+    pub priority: Option<Priority>,
+    pub custom: &'a HashMap<String, String>,
+}
 
-    // Add custom metadata first
-    for (key, value) in custom {
+impl<'a> Default for FormatTaskParams<'a> {
+    fn default() -> Self {
+        // Use a leaked empty HashMap for the default — this is a static empty reference
+        static EMPTY_MAP: std::sync::LazyLock<HashMap<String, String>> =
+            std::sync::LazyLock::new(HashMap::new);
+        Self {
+            description: "",
+            symbol: "[ ]",
+            scheduled: None,
+            due: None,
+            done: None,
+            start: None,
+            created: None,
+            cancelled: None,
+            recurrence: None,
+            on_completion: None,
+            id: None,
+            depends_on: &[],
+            priority: None,
+            custom: &EMPTY_MAP,
+        }
+    }
+}
+
+/// Format a task string for Obsidian.
+///
+/// Uses Obsidian Tasks canonical order:
+/// description → custom metadata → id → depends_on → priority → recurrence →
+/// on_completion → created → start → scheduled → due → cancelled → done
+pub fn format_task(params: &FormatTaskParams, config: &TaskConfig) -> String {
+    let mut parts = vec![format!("- {} {}", params.symbol, params.description)];
+
+    // Custom metadata (before recognized fields so Obsidian Tasks can parse from end)
+    for (key, value) in params.custom {
         if let Some(emoji) = config.custom_metadata.get(key) {
             parts.push(format!("{} {}", emoji, value));
         }
     }
 
-    // Add scheduled date
-    if let Some(date) = scheduled {
-        parts.push(format!("{} {}", config.scheduled, date));
+    // Obsidian Tasks canonical field order
+    if let Some(id) = params.id {
+        parts.push(format!("{} {}", config.id, id));
     }
 
-    // Add due date
-    if let Some(date) = due {
-        parts.push(format!("{} {}", config.due, date));
+    if !params.depends_on.is_empty() {
+        parts.push(format!("{} {}", config.depends_on, params.depends_on.join(",")));
     }
 
-    // Add done date
-    if let Some(date) = done {
-        parts.push(format!("{} {}", config.done, date));
-    }
-
-    // Add priority
-    if let Some(p) = priority {
+    if let Some(p) = params.priority {
         let emoji = match p {
             Priority::Highest => &config.priority_highest,
             Priority::High => &config.priority_high,
@@ -431,6 +512,38 @@ pub fn format_task(
             Priority::Lowest => &config.priority_lowest,
         };
         parts.push(emoji.to_string());
+    }
+
+    if let Some(recurrence) = params.recurrence {
+        parts.push(format!("{} {}", config.recurrence, recurrence));
+    }
+
+    if let Some(on_completion) = params.on_completion {
+        parts.push(format!("{} {}", config.on_completion, on_completion));
+    }
+
+    if let Some(date) = params.created {
+        parts.push(format!("{} {}", config.created, date));
+    }
+
+    if let Some(date) = params.start {
+        parts.push(format!("{} {}", config.start, date));
+    }
+
+    if let Some(date) = params.scheduled {
+        parts.push(format!("{} {}", config.scheduled, date));
+    }
+
+    if let Some(date) = params.due {
+        parts.push(format!("{} {}", config.due, date));
+    }
+
+    if let Some(date) = params.cancelled {
+        parts.push(format!("{} {}", config.cancelled, date));
+    }
+
+    if let Some(date) = params.done {
+        parts.push(format!("{} {}", config.done, date));
     }
 
     parts.join(" ")
@@ -594,14 +707,19 @@ mod tests {
     #[test]
     fn test_format_task() {
         let config = default_config();
+        let empty_custom = HashMap::new();
+        let empty_deps: Vec<String> = vec![];
         let result = format_task(
-            "My task",
-            "[ ]",
-            Some("2026-02-05"),
-            Some("2026-02-10"),
-            None,
-            Some(Priority::High),
-            &HashMap::new(),
+            &FormatTaskParams {
+                description: "My task",
+                symbol: "[ ]",
+                scheduled: Some("2026-02-05"),
+                due: Some("2026-02-10"),
+                priority: Some(Priority::High),
+                custom: &empty_custom,
+                depends_on: &empty_deps,
+                ..Default::default()
+            },
             &config,
         );
 
@@ -609,6 +727,182 @@ mod tests {
         assert!(result.contains("⏳ 2026-02-05"));
         assert!(result.contains("📅 2026-02-10"));
         assert!(result.contains("⏫"));
+    }
+
+    #[test]
+    fn test_parse_task_with_start_date() {
+        let content = "- [ ] Task with start 🛫 2026-03-01";
+        let path = PathBuf::from("test.md");
+        let tasks = parse_tasks(content, &path, &default_config());
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].start, Some("2026-03-01".to_string()));
+    }
+
+    #[test]
+    fn test_parse_task_with_created_date() {
+        let content = "- [ ] Task ➕ 2026-02-20";
+        let path = PathBuf::from("test.md");
+        let tasks = parse_tasks(content, &path, &default_config());
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].created, Some("2026-02-20".to_string()));
+    }
+
+    #[test]
+    fn test_parse_task_with_cancelled_date() {
+        let content = "- [-] Cancelled task ❌ 2026-02-25";
+        let path = PathBuf::from("test.md");
+        let tasks = parse_tasks(content, &path, &default_config());
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].cancelled, Some("2026-02-25".to_string()));
+    }
+
+    #[test]
+    fn test_parse_task_with_recurrence() {
+        let content = "- [ ] Recurring task 🔁 every week 📅 2026-03-01";
+        let path = PathBuf::from("test.md");
+        let tasks = parse_tasks(content, &path, &default_config());
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].recurrence, Some("every week".to_string()));
+        assert_eq!(tasks[0].due, Some("2026-03-01".to_string()));
+    }
+
+    #[test]
+    fn test_parse_task_with_id_and_depends() {
+        let content = "- [ ] Task 🆔 abc123 ⛔ def456,ghi789 📅 2026-03-01";
+        let path = PathBuf::from("test.md");
+        let tasks = parse_tasks(content, &path, &default_config());
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, Some("abc123".to_string()));
+        assert_eq!(tasks[0].depends_on, vec!["def456", "ghi789"]);
+        assert_eq!(tasks[0].due, Some("2026-03-01".to_string()));
+    }
+
+    #[test]
+    fn test_parse_task_with_on_completion() {
+        let content = "- [ ] Task 🏁 delete 📅 2026-03-01";
+        let path = PathBuf::from("test.md");
+        let tasks = parse_tasks(content, &path, &default_config());
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].on_completion, Some("delete".to_string()));
+        assert_eq!(tasks[0].due, Some("2026-03-01".to_string()));
+    }
+
+    #[test]
+    fn test_parse_task_all_fields() {
+        let content = "- [ ] Full task 🆔 myid ⛔ dep1 ⏫ 🔁 every day 🏁 delete ➕ 2026-01-01 🛫 2026-02-01 ⏳ 2026-02-15 📅 2026-03-01 ❌ 2026-02-20 ✅ 2026-02-25";
+        let path = PathBuf::from("test.md");
+        let tasks = parse_tasks(content, &path, &default_config());
+
+        assert_eq!(tasks.len(), 1);
+        let task = &tasks[0];
+        assert_eq!(task.description, "Full task");
+        assert_eq!(task.id, Some("myid".to_string()));
+        assert_eq!(task.depends_on, vec!["dep1"]);
+        assert_eq!(task.priority, Some(Priority::High));
+        assert_eq!(task.recurrence, Some("every day".to_string()));
+        assert_eq!(task.on_completion, Some("delete".to_string()));
+        assert_eq!(task.created, Some("2026-01-01".to_string()));
+        assert_eq!(task.start, Some("2026-02-01".to_string()));
+        assert_eq!(task.scheduled, Some("2026-02-15".to_string()));
+        assert_eq!(task.due, Some("2026-03-01".to_string()));
+        assert_eq!(task.cancelled, Some("2026-02-20".to_string()));
+        assert_eq!(task.done, Some("2026-02-25".to_string()));
+    }
+
+    #[test]
+    fn test_format_task_canonical_order() {
+        let config = default_config();
+        let empty_custom = HashMap::new();
+        let deps = vec!["dep1".to_string()];
+        let result = format_task(
+            &FormatTaskParams {
+                description: "Task",
+                symbol: "[ ]",
+                id: Some("myid"),
+                depends_on: &deps,
+                priority: Some(Priority::High),
+                recurrence: Some("every week"),
+                on_completion: Some("delete"),
+                created: Some("2026-01-01"),
+                start: Some("2026-02-01"),
+                scheduled: Some("2026-02-15"),
+                due: Some("2026-03-01"),
+                cancelled: Some("2026-02-20"),
+                done: Some("2026-02-25"),
+                custom: &empty_custom,
+            },
+            &config,
+        );
+
+        // Verify canonical order: id → depends → priority → recurrence → on_completion → created → start → scheduled → due → cancelled → done
+        let id_pos = result.find("🆔").unwrap();
+        let dep_pos = result.find("⛔").unwrap();
+        let pri_pos = result.find("⏫").unwrap();
+        let rec_pos = result.find("🔁").unwrap();
+        let oc_pos = result.find("🏁").unwrap();
+        let cre_pos = result.find("➕").unwrap();
+        let start_pos = result.find("🛫").unwrap();
+        let sch_pos = result.find("⏳").unwrap();
+        let due_pos = result.find("📅").unwrap();
+        let can_pos = result.find("❌").unwrap();
+        let done_pos = result.find("✅").unwrap();
+
+        assert!(id_pos < dep_pos);
+        assert!(dep_pos < pri_pos);
+        assert!(pri_pos < rec_pos);
+        assert!(rec_pos < oc_pos);
+        assert!(oc_pos < cre_pos);
+        assert!(cre_pos < start_pos);
+        assert!(start_pos < sch_pos);
+        assert!(sch_pos < due_pos);
+        assert!(due_pos < can_pos);
+        assert!(can_pos < done_pos);
+    }
+
+    #[test]
+    fn test_format_task_round_trip() {
+        let config = default_config();
+        let empty_custom = HashMap::new();
+        let deps = vec!["dep1".to_string()];
+        let formatted = format_task(
+            &FormatTaskParams {
+                description: "Round trip task",
+                symbol: "[ ]",
+                id: Some("myid"),
+                depends_on: &deps,
+                priority: Some(Priority::High),
+                recurrence: Some("every week"),
+                created: Some("2026-01-01"),
+                start: Some("2026-02-01"),
+                scheduled: Some("2026-02-15"),
+                due: Some("2026-03-01"),
+                custom: &empty_custom,
+                ..Default::default()
+            },
+            &config,
+        );
+
+        // Parse it back
+        let path = PathBuf::from("test.md");
+        let tasks = parse_tasks(&formatted, &path, &config);
+
+        assert_eq!(tasks.len(), 1);
+        let task = &tasks[0];
+        assert_eq!(task.description, "Round trip task");
+        assert_eq!(task.id, Some("myid".to_string()));
+        assert_eq!(task.depends_on, vec!["dep1"]);
+        assert_eq!(task.priority, Some(Priority::High));
+        assert_eq!(task.recurrence, Some("every week".to_string()));
+        assert_eq!(task.created, Some("2026-01-01".to_string()));
+        assert_eq!(task.start, Some("2026-02-01".to_string()));
+        assert_eq!(task.scheduled, Some("2026-02-15".to_string()));
+        assert_eq!(task.due, Some("2026-03-01".to_string()));
     }
 
     #[test]
@@ -653,6 +947,13 @@ mod tests {
                 scheduled: None,
                 due: None,
                 done: None,
+                start: None,
+                created: None,
+                cancelled: None,
+                recurrence: None,
+                on_completion: None,
+                id: None,
+                depends_on: vec![],
                 priority: None,
                 custom: HashMap::new(),
                 links: vec![],
@@ -672,6 +973,13 @@ mod tests {
                 scheduled: None,
                 due: None,
                 done: None,
+                start: None,
+                created: None,
+                cancelled: None,
+                recurrence: None,
+                on_completion: None,
+                id: None,
+                depends_on: vec![],
                 priority: None,
                 custom: HashMap::new(),
                 links: vec![],

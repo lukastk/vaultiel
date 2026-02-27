@@ -153,6 +153,9 @@ pub enum Commands {
     #[command(name = "rename-frontmatter")]
     RenameFrontmatter(RenameFrontmatterArgs),
 
+    /// Inspect a note — full JSON representation
+    Inspect(InspectArgs),
+
     // === Phase 3: Tasks ===
 
     /// Get tasks from notes
@@ -747,6 +750,42 @@ pub struct GetTasksArgs {
     #[arg(long)]
     pub done_on: Option<String>,
 
+    /// Start date before (exclusive)
+    #[arg(long)]
+    pub start_before: Option<String>,
+
+    /// Start date after (exclusive)
+    #[arg(long)]
+    pub start_after: Option<String>,
+
+    /// Start on specific date
+    #[arg(long)]
+    pub start_on: Option<String>,
+
+    /// Created date before (exclusive)
+    #[arg(long)]
+    pub created_before: Option<String>,
+
+    /// Created date after (exclusive)
+    #[arg(long)]
+    pub created_after: Option<String>,
+
+    /// Created on specific date
+    #[arg(long)]
+    pub created_on: Option<String>,
+
+    /// Only tasks with recurrence rules
+    #[arg(long)]
+    pub has_recurrence: bool,
+
+    /// Filter by task ID
+    #[arg(long = "id")]
+    pub id_filter: Option<String>,
+
+    /// Filter by dependency (tasks depending on this ID)
+    #[arg(long = "depends-on")]
+    pub depends_on_filter: Option<String>,
+
     /// Filter by priority (highest, high, medium, low, lowest)
     #[arg(long)]
     pub priority: Option<String>,
@@ -802,6 +841,34 @@ pub struct FormatTaskArgs {
     #[arg(long)]
     pub done: Option<String>,
 
+    /// Start date (ISO date or relative)
+    #[arg(long)]
+    pub start: Option<String>,
+
+    /// Created date (ISO date or relative)
+    #[arg(long)]
+    pub created: Option<String>,
+
+    /// Cancelled date (ISO date or relative)
+    #[arg(long)]
+    pub cancelled: Option<String>,
+
+    /// Recurrence rule (e.g., "every week", "every 2 days")
+    #[arg(long)]
+    pub recurrence: Option<String>,
+
+    /// On completion action (e.g., "delete")
+    #[arg(long)]
+    pub on_completion: Option<String>,
+
+    /// Task ID for dependency tracking
+    #[arg(long)]
+    pub id: Option<String>,
+
+    /// Task IDs this task depends on (repeatable)
+    #[arg(long)]
+    pub depends_on: Vec<String>,
+
     /// Priority level (highest, high, medium, low, lowest)
     #[arg(long)]
     pub priority: Option<String>,
@@ -809,6 +876,22 @@ pub struct FormatTaskArgs {
     /// Custom metadata in KEY=VALUE format (repeatable)
     #[arg(long = "custom")]
     pub custom_metadata: Vec<String>,
+}
+
+// === Inspect ===
+
+#[derive(Parser, Debug)]
+pub struct InspectArgs {
+    /// Path to the note
+    pub path: String,
+
+    /// Omit raw content from stats calculation (reduces output size)
+    #[arg(long)]
+    pub no_content: bool,
+
+    /// Include incoming links (requires building link graph, slower)
+    #[arg(long)]
+    pub include_incoming: bool,
 }
 
 // === Vault Health & Info ===

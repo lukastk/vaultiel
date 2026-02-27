@@ -54,7 +54,7 @@ pub fn run(vault: &Vault, args: &ListArgs, output: &Output) -> Result<()> {
             .collect();
     }
 
-    // Apply frontmatter filter if specified
+    // Apply frontmatter filter if specified (supports =, !=, ~= operators)
     if !args.frontmatter.is_empty() {
         notes = notes
             .into_iter()
@@ -63,25 +63,7 @@ pub fn run(vault: &Vault, args: &ListArgs, output: &Output) -> Result<()> {
                 if let Ok(note) = vault.load_note(&path) {
                     if let Ok(Some(fm)) = note.frontmatter() {
                         args.frontmatter.iter().all(|filter| {
-                            if let Some((key, value)) = filter.split_once('=') {
-                                if let Some(fm_value) = fm.get(key) {
-                                    match fm_value {
-                                        serde_yaml::Value::String(s) => s == value,
-                                        serde_yaml::Value::Bool(b) => {
-                                            (value == "true" && *b) || (value == "false" && !*b)
-                                        }
-                                        serde_yaml::Value::Number(n) => {
-                                            n.to_string() == value
-                                        }
-                                        _ => false,
-                                    }
-                                } else {
-                                    false
-                                }
-                            } else {
-                                // Just check key existence
-                                fm.get(filter).is_some()
-                            }
+                            matches_frontmatter_filter(filter, &fm)
                         })
                     } else {
                         false
@@ -145,5 +127,91 @@ fn compare_optional_strings(a: &Option<String>, b: &Option<String>) -> Ordering 
         (Some(_), None) => Ordering::Less,
         (None, Some(_)) => Ordering::Greater,
         (None, None) => Ordering::Equal,
+    }
+}
+
+/// Check if a single frontmatter filter expression matches a frontmatter value.
+///
+/// Supported syntax:
+/// - `key=value` — equality match (string, bool, number)
+/// - `key!=value` — negation (true if key doesn't equal value, or key is absent)
+/// - `key~=value` — list-contains (true if key's value is a list containing value)
+/// - `key` — key existence check
+pub fn matches_frontmatter_filter(filter: &str, fm: &serde_yaml::Value) -> bool {
+    // Try negation first (!=)
+    if let Some((key, value)) = filter.split_once("!=") {
+        if let Some(fm_value) = fm.get(key) {
+            return !yaml_value_equals(fm_value, value);
+        } else {
+            // Key absent → not equal to value → true
+            return true;
+        }
+    }
+
+    // Try list-contains (~=)
+    if let Some((key, value)) = filter.split_once("~=") {
+        if let Some(fm_value) = fm.get(key) {
+            return yaml_list_contains(fm_value, value);
+        } else {
+            return false;
+        }
+    }
+
+    // Try equality (=)
+    if let Some((key, value)) = filter.split_once('=') {
+        if let Some(fm_value) = fm.get(key) {
+            return yaml_value_equals(fm_value, value);
+        } else {
+            return false;
+        }
+    }
+
+    // Just key existence
+    fm.get(filter).is_some()
+}
+
+/// Check if a YAML value equals a string representation.
+fn yaml_value_equals(fm_value: &serde_yaml::Value, value: &str) -> bool {
+    match fm_value {
+        serde_yaml::Value::String(s) => s == value,
+        serde_yaml::Value::Bool(b) => {
+            (value == "true" && *b) || (value == "false" && !*b)
+        }
+        serde_yaml::Value::Number(n) => n.to_string() == value,
+        _ => false,
+    }
+}
+
+/// Check if a YAML value is a list containing a matching item.
+fn yaml_list_contains(fm_value: &serde_yaml::Value, value: &str) -> bool {
+    match fm_value {
+        serde_yaml::Value::Sequence(items) => {
+            items.iter().any(|item| {
+                match item {
+                    serde_yaml::Value::String(s) => {
+                        // Handle wikilinks: "[[some/note]]" matches "some/note"
+                        // Also handle aliases: "[[path|alias]]" matches "path", "alias", "path|alias"
+                        let stripped = s.trim_start_matches("[[").trim_end_matches("]]");
+                        if s == value || stripped == value {
+                            return true;
+                        }
+                        // Check path and alias parts separately
+                        if let Some((path, alias)) = stripped.split_once('|') {
+                            path == value || alias == value
+                        } else {
+                            // Also check if value is a substring of the path
+                            stripped.contains(value)
+                        }
+                    }
+                    serde_yaml::Value::Bool(b) => {
+                        (value == "true" && *b) || (value == "false" && !*b)
+                    }
+                    serde_yaml::Value::Number(n) => n.to_string() == value,
+                    _ => false,
+                }
+            })
+        }
+        // If scalar, treat as a single-element list
+        _ => yaml_value_equals(fm_value, value),
     }
 }

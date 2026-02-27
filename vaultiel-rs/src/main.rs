@@ -4,7 +4,7 @@ use clap::Parser;
 use std::process::ExitCode;
 use vaultiel::cli::args::{Cli, Commands, CacheCommands};
 use vaultiel::cli::output::Output;
-use vaultiel::cli::{blocks, cache, content, create, delete, export, frontmatter, headings, info, links, lint, list, metadata, rename, resolve, search, tags, tasks};
+use vaultiel::cli::{blocks, cache, content, create, delete, export, frontmatter, headings, info, inspect, links, lint, list, metadata, rename, resolve, search, tags, tasks};
 use vaultiel::cli::lint::LintFormat;
 use vaultiel::types::Priority;
 use vaultiel::config::Config;
@@ -154,6 +154,10 @@ fn run(cli: &Cli) -> Result<VaultExitCode, VaultError> {
             Ok(VaultExitCode::Success)
         }
 
+        Commands::Inspect(args) => {
+            inspect::run(&vault, &args.path, args.no_content, args.include_incoming, &output)
+        }
+
         // Phase 3 commands
         Commands::GetTasks(args) => {
             let filter = tasks::TaskFilter {
@@ -167,6 +171,15 @@ fn run(cli: &Cli) -> Result<VaultExitCode, VaultError> {
                 done_before: args.done_before.clone(),
                 done_after: args.done_after.clone(),
                 done_on: args.done_on.clone(),
+                start_before: args.start_before.clone(),
+                start_after: args.start_after.clone(),
+                start_on: args.start_on.clone(),
+                created_before: args.created_before.clone(),
+                created_after: args.created_after.clone(),
+                created_on: args.created_on.clone(),
+                has_recurrence: args.has_recurrence,
+                id_filter: args.id_filter.clone(),
+                depends_on_filter: args.depends_on_filter.clone(),
                 priority: args.priority.as_ref().and_then(|p| p.parse().ok()),
                 contains: args.contains.clone(),
                 has_metadata: args.has_metadata.clone(),
@@ -199,13 +212,22 @@ fn run(cli: &Cli) -> Result<VaultExitCode, VaultError> {
                 })
                 .collect();
             tasks::format_task_command(
-                &args.desc,
-                &args.symbol,
-                args.scheduled.as_deref(),
-                args.due.as_deref(),
-                args.done.as_deref(),
-                priority,
-                &custom,
+                &tasks::FormatTaskCommandParams {
+                    description: &args.desc,
+                    symbol: &args.symbol,
+                    scheduled: args.scheduled.as_deref(),
+                    due: args.due.as_deref(),
+                    done: args.done.as_deref(),
+                    start: args.start.as_deref(),
+                    created: args.created.as_deref(),
+                    cancelled: args.cancelled.as_deref(),
+                    recurrence: args.recurrence.as_deref(),
+                    on_completion: args.on_completion.as_deref(),
+                    id: args.id.as_deref(),
+                    depends_on: &args.depends_on,
+                    priority,
+                    custom: &custom,
+                },
                 &vault,
                 &output,
             )

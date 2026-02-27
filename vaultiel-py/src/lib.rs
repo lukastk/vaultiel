@@ -138,6 +138,20 @@ pub struct Task {
     #[pyo3(get)]
     pub done: Option<String>,
     #[pyo3(get)]
+    pub start: Option<String>,
+    #[pyo3(get)]
+    pub created: Option<String>,
+    #[pyo3(get)]
+    pub cancelled: Option<String>,
+    #[pyo3(get)]
+    pub recurrence: Option<String>,
+    #[pyo3(get)]
+    pub on_completion: Option<String>,
+    #[pyo3(get)]
+    pub id: Option<String>,
+    #[pyo3(get)]
+    pub depends_on: Vec<String>,
+    #[pyo3(get)]
     pub priority: Option<String>,
     #[pyo3(get)]
     pub tags: Vec<String>,
@@ -535,11 +549,123 @@ impl PyVault {
                 scheduled: t.scheduled,
                 due: t.due,
                 done: t.done,
+                start: t.start,
+                created: t.created,
+                cancelled: t.cancelled,
+                recurrence: t.recurrence,
+                on_completion: t.on_completion,
+                id: t.id,
+                depends_on: t.depends_on,
                 priority: t.priority.map(|p| format!("{:?}", p).to_lowercase()),
                 tags: t.tags,
                 block_id: t.block_id,
             })
             .collect())
+    }
+
+    // ========================================================================
+    // Write Operations
+    // ========================================================================
+
+    /// Set the content of a note (replaces body, preserves frontmatter).
+    pub fn set_content(&self, path: String, content: String) -> PyResult<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let updated = note.with_body(&content);
+        updated.save(&self.vault.root)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Modify a frontmatter field.
+    pub fn modify_frontmatter(&self, path: String, key: String, value: String) -> PyResult<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut fm = note.frontmatter()
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+            .unwrap_or(serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(&value)
+            .unwrap_or(serde_yaml::Value::String(value));
+
+        if let serde_yaml::Value::Mapping(ref mut map) = fm {
+            map.insert(serde_yaml::Value::String(key), yaml_value);
+        }
+
+        let updated = note.with_frontmatter(&fm)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Append content to a note.
+    pub fn append_content(&self, path: String, content: String) -> PyResult<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let updated = note.append(&content);
+        updated.save(&self.vault.root)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Replace first occurrence of pattern in note content.
+    pub fn replace_content(&self, path: String, pattern: String, replacement: String) -> PyResult<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let new_content = note.content.replacen(&pattern, &replacement, 1);
+        let updated = ::vaultiel::Note { path: note.path, content: new_content };
+        updated.save(&self.vault.root)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Inspect a note — returns full JSON representation as a string.
+    pub fn inspect(&self, path: String) -> PyResult<String> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let info = self.vault.note_info(&note_path)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+
+        let frontmatter: Option<serde_json::Value> = match note.frontmatter() {
+            Ok(Some(yaml)) => {
+                let json_str = serde_json::to_string(&yaml).unwrap_or_default();
+                serde_json::from_str(&json_str).ok()
+            }
+            _ => None,
+        };
+
+        let task_config = ::vaultiel::config::TaskConfig::default();
+        let tasks = parse_tasks(&note.content, &note_path, &task_config);
+        let links = ::vaultiel::parser::parse_all_links(&note.content);
+        let tags = parse_tags(&note.content);
+        let headings = parse_headings(&note.content);
+        let block_ids = ::vaultiel::parser::parse_block_ids(&note.content);
+        let inline_attrs = ::vaultiel::parser::parse_inline_attrs(&note.content);
+
+        let result = serde_json::json!({
+            "path": note_path.to_string_lossy(),
+            "name": note.name(),
+            "frontmatter": frontmatter,
+            "inline_attrs": inline_attrs,
+            "headings": headings,
+            "tasks": tasks,
+            "links": {
+                "outgoing": links,
+            },
+            "tags": tags,
+            "block_ids": block_ids,
+            "stats": {
+                "lines": note.content.lines().count(),
+                "words": note.content.split_whitespace().count(),
+                "size_bytes": info.size_bytes.unwrap_or(0),
+            }
+        });
+
+        serde_json::to_string(&result)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     // ========================================================================

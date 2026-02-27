@@ -76,6 +76,13 @@ pub struct JsTask {
     pub scheduled: Option<String>,
     pub due: Option<String>,
     pub done: Option<String>,
+    pub start: Option<String>,
+    pub created: Option<String>,
+    pub cancelled: Option<String>,
+    pub recurrence: Option<String>,
+    pub on_completion: Option<String>,
+    pub id: Option<String>,
+    pub depends_on: Vec<String>,
     pub priority: Option<String>,
     pub tags: Vec<String>,
     pub block_id: Option<String>,
@@ -322,11 +329,129 @@ impl JsVault {
                 scheduled: t.scheduled,
                 due: t.due,
                 done: t.done,
+                start: t.start,
+                created: t.created,
+                cancelled: t.cancelled,
+                recurrence: t.recurrence,
+                on_completion: t.on_completion,
+                id: t.id,
+                depends_on: t.depends_on,
                 priority: t.priority.map(|p| format!("{:?}", p).to_lowercase()),
                 tags: t.tags,
                 block_id: t.block_id,
             })
             .collect())
+    }
+
+    // ========================================================================
+    // Write Operations
+    // ========================================================================
+
+    /// Set the content of a note (replaces body, preserves frontmatter).
+    #[napi]
+    pub fn set_content(&self, path: String, content: String) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let updated = note.with_body(&content);
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Modify a frontmatter field.
+    #[napi]
+    pub fn modify_frontmatter(&self, path: String, key: String, value: String) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        let mut fm = note.frontmatter()
+            .map_err(|e| Error::from_reason(e.to_string()))?
+            .unwrap_or(serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+
+        // Parse the value as YAML to handle booleans, numbers, etc.
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(&value)
+            .unwrap_or(serde_yaml::Value::String(value));
+
+        if let serde_yaml::Value::Mapping(ref mut map) = fm {
+            map.insert(serde_yaml::Value::String(key), yaml_value);
+        }
+
+        let updated = note.with_frontmatter(&fm)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Append content to a note.
+    #[napi]
+    pub fn append_content(&self, path: String, content: String) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let updated = note.append(&content);
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Replace first occurrence of pattern in note content.
+    #[napi]
+    pub fn replace_content(&self, path: String, pattern: String, replacement: String) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let new_content = note.content.replacen(&pattern, &replacement, 1);
+        let updated = vaultiel::Note { path: note.path, content: new_content };
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Inspect a note — returns full JSON representation.
+    #[napi]
+    pub fn inspect(&self, path: String) -> Result<String> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let info = self.vault.note_info(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        let frontmatter: Option<serde_json::Value> = match note.frontmatter() {
+            Ok(Some(yaml)) => {
+                let json_str = serde_json::to_string(&yaml).unwrap_or_default();
+                serde_json::from_str(&json_str).ok()
+            }
+            _ => None,
+        };
+
+        let task_config = vaultiel::config::TaskConfig::default();
+        let tasks = parse_tasks(&note.content, &note_path, &task_config);
+        let links = note.links();
+        let tags = note.tags();
+        let headings = parse_headings(&note.content);
+        let block_ids = vaultiel::parser::parse_block_ids(&note.content);
+        let inline_attrs = vaultiel::parser::parse_inline_attrs(&note.content);
+
+        let result = serde_json::json!({
+            "path": note_path.to_string_lossy(),
+            "name": note.name(),
+            "frontmatter": frontmatter,
+            "inline_attrs": inline_attrs,
+            "headings": headings,
+            "tasks": tasks,
+            "links": {
+                "outgoing": links,
+            },
+            "tags": tags,
+            "block_ids": block_ids,
+            "stats": {
+                "lines": note.content.lines().count(),
+                "words": note.content.split_whitespace().count(),
+                "size_bytes": info.size_bytes.unwrap_or(0),
+            }
+        });
+
+        serde_json::to_string(&result)
+            .map_err(|e| Error::from_reason(e.to_string()))
     }
 
     // ========================================================================

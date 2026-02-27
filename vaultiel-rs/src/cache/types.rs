@@ -328,6 +328,27 @@ pub struct CachedTask {
     pub due: Option<String>,
     /// Done date.
     pub done: Option<String>,
+    /// Start date.
+    #[serde(default)]
+    pub start: Option<String>,
+    /// Created date.
+    #[serde(default)]
+    pub created: Option<String>,
+    /// Cancelled date.
+    #[serde(default)]
+    pub cancelled: Option<String>,
+    /// Recurrence rule.
+    #[serde(default)]
+    pub recurrence: Option<String>,
+    /// On completion action.
+    #[serde(default)]
+    pub on_completion: Option<String>,
+    /// Task ID.
+    #[serde(default)]
+    pub id: Option<String>,
+    /// Depends on task IDs.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
     /// Priority.
     pub priority: Option<String>,
     /// Tags in the task.

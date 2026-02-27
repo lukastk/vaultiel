@@ -3,7 +3,7 @@
 use crate::cli::output::Output;
 use crate::config::TaskConfig;
 use crate::error::{ExitCode, Result};
-use crate::parser::task::{build_task_hierarchy, format_task, parse_relative_date, parse_tasks};
+use crate::parser::task::{build_task_hierarchy, format_task, FormatTaskParams, parse_relative_date, parse_tasks};
 use crate::types::{HierarchicalTask, Priority, Task};
 use crate::vault::Vault;
 use chrono::Local;
@@ -41,6 +41,15 @@ pub struct TaskFilter {
     pub done_before: Option<String>,
     pub done_after: Option<String>,
     pub done_on: Option<String>,
+    pub start_before: Option<String>,
+    pub start_after: Option<String>,
+    pub start_on: Option<String>,
+    pub created_before: Option<String>,
+    pub created_after: Option<String>,
+    pub created_on: Option<String>,
+    pub has_recurrence: bool,
+    pub id_filter: Option<String>,
+    pub depends_on_filter: Option<String>,
     pub priority: Option<Priority>,
     pub contains: Option<String>,
     pub has_metadata: Vec<String>,
@@ -128,6 +137,75 @@ impl TaskFilter {
         }
         if let Some(ref on) = self.done_on {
             if task.done.as_ref() != Some(on) {
+                return false;
+            }
+        }
+
+        // Start date filters
+        if let Some(ref before) = self.start_before {
+            if let Some(ref start) = task.start {
+                if start >= before {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        if let Some(ref after) = self.start_after {
+            if let Some(ref start) = task.start {
+                if start <= after {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        if let Some(ref on) = self.start_on {
+            if task.start.as_ref() != Some(on) {
+                return false;
+            }
+        }
+
+        // Created date filters
+        if let Some(ref before) = self.created_before {
+            if let Some(ref created) = task.created {
+                if created >= before {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        if let Some(ref after) = self.created_after {
+            if let Some(ref created) = task.created {
+                if created <= after {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        if let Some(ref on) = self.created_on {
+            if task.created.as_ref() != Some(on) {
+                return false;
+            }
+        }
+
+        // Recurrence filter
+        if self.has_recurrence && task.recurrence.is_none() {
+            return false;
+        }
+
+        // ID filter
+        if let Some(ref id) = self.id_filter {
+            if task.id.as_ref() != Some(id) {
+                return false;
+            }
+        }
+
+        // Depends on filter
+        if let Some(ref dep) = self.depends_on_filter {
+            if !task.depends_on.contains(dep) {
                 return false;
             }
         }
@@ -242,15 +320,27 @@ pub fn get_tasks(
     Ok(ExitCode::Success)
 }
 
+/// Parameters for the format-task CLI command.
+pub struct FormatTaskCommandParams<'a> {
+    pub description: &'a str,
+    pub symbol: &'a str,
+    pub scheduled: Option<&'a str>,
+    pub due: Option<&'a str>,
+    pub done: Option<&'a str>,
+    pub start: Option<&'a str>,
+    pub created: Option<&'a str>,
+    pub cancelled: Option<&'a str>,
+    pub recurrence: Option<&'a str>,
+    pub on_completion: Option<&'a str>,
+    pub id: Option<&'a str>,
+    pub depends_on: &'a [String],
+    pub priority: Option<Priority>,
+    pub custom: &'a HashMap<String, String>,
+}
+
 /// Format a task string for Obsidian.
 pub fn format_task_command(
-    description: &str,
-    symbol: &str,
-    scheduled: Option<&str>,
-    due: Option<&str>,
-    done: Option<&str>,
-    priority: Option<Priority>,
-    custom: &HashMap<String, String>,
+    params: &FormatTaskCommandParams,
     vault: &Vault,
     output: &Output,
 ) -> Result<ExitCode> {
@@ -258,18 +348,30 @@ pub fn format_task_command(
     let today = Local::now().date_naive();
 
     // Resolve relative dates
-    let scheduled_resolved = scheduled.and_then(|s| parse_relative_date(s, today));
-    let due_resolved = due.and_then(|s| parse_relative_date(s, today));
-    let done_resolved = done.and_then(|s| parse_relative_date(s, today));
+    let scheduled_resolved = params.scheduled.and_then(|s| parse_relative_date(s, today));
+    let due_resolved = params.due.and_then(|s| parse_relative_date(s, today));
+    let done_resolved = params.done.and_then(|s| parse_relative_date(s, today));
+    let start_resolved = params.start.and_then(|s| parse_relative_date(s, today));
+    let created_resolved = params.created.and_then(|s| parse_relative_date(s, today));
+    let cancelled_resolved = params.cancelled.and_then(|s| parse_relative_date(s, today));
 
     let formatted = format_task(
-        description,
-        symbol,
-        scheduled_resolved.as_deref(),
-        due_resolved.as_deref(),
-        done_resolved.as_deref(),
-        priority,
-        custom,
+        &FormatTaskParams {
+            description: params.description,
+            symbol: params.symbol,
+            scheduled: scheduled_resolved.as_deref(),
+            due: due_resolved.as_deref(),
+            done: done_resolved.as_deref(),
+            start: start_resolved.as_deref(),
+            created: created_resolved.as_deref(),
+            cancelled: cancelled_resolved.as_deref(),
+            recurrence: params.recurrence,
+            on_completion: params.on_completion,
+            id: params.id,
+            depends_on: params.depends_on,
+            priority: params.priority,
+            custom: params.custom,
+        },
         &task_config,
     );
 
@@ -299,6 +401,13 @@ mod tests {
             scheduled: None,
             due: None,
             done: None,
+            start: None,
+            created: None,
+            cancelled: None,
+            recurrence: None,
+            on_completion: None,
+            id: None,
+            depends_on: vec![],
             priority: None,
             custom: HashMap::new(),
             links: vec![],

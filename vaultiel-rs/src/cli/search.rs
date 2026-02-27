@@ -1,6 +1,7 @@
 //! Search command implementation.
 
 use crate::cli::args::{SearchArgs, SearchMode};
+use crate::cli::list::matches_frontmatter_filter;
 use crate::cli::output::Output;
 use crate::error::Result;
 use crate::vault::Vault;
@@ -143,27 +144,12 @@ pub fn run(vault: &Vault, args: &SearchArgs, output: &Output) -> Result<()> {
             }
         }
 
-        // Apply frontmatter filter
+        // Apply frontmatter filter (supports =, !=, ~= operators)
         if !args.frontmatter.is_empty() {
             if let Ok(note) = vault.load_note(&path) {
                 if let Ok(Some(fm)) = note.frontmatter() {
                     let matches_all = args.frontmatter.iter().all(|filter| {
-                        if let Some((key, value)) = filter.split_once('=') {
-                            if let Some(fm_value) = fm.get(key) {
-                                match fm_value {
-                                    serde_yaml::Value::String(s) => s == value,
-                                    serde_yaml::Value::Bool(b) => {
-                                        (value == "true" && *b) || (value == "false" && !*b)
-                                    }
-                                    serde_yaml::Value::Number(n) => n.to_string() == value,
-                                    _ => false,
-                                }
-                            } else {
-                                false
-                            }
-                        } else {
-                            fm.get(filter).is_some()
-                        }
+                        matches_frontmatter_filter(filter, &fm)
                     });
                     if !matches_all {
                         continue;

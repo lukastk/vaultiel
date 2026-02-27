@@ -243,6 +243,34 @@ pub struct Task {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub done: Option<String>,
 
+    /// Start date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
+
+    /// Created date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+
+    /// Cancelled date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancelled: Option<String>,
+
+    /// Recurrence rule (e.g., "every week").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recurrence: Option<String>,
+
+    /// On completion action (e.g., "delete").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_completion: Option<String>,
+
+    /// Task ID for dependency tracking.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+
+    /// Task IDs this task depends on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
+
     /// Priority level.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<Priority>,
@@ -361,6 +389,34 @@ pub struct HierarchicalTask {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub done: Option<String>,
 
+    /// Start date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
+
+    /// Created date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+
+    /// Cancelled date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancelled: Option<String>,
+
+    /// Recurrence rule.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recurrence: Option<String>,
+
+    /// On completion action.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_completion: Option<String>,
+
+    /// Task ID for dependency tracking.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+
+    /// Task IDs this task depends on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
+
     /// Priority level.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<Priority>,
@@ -395,6 +451,13 @@ impl From<Task> for HierarchicalTask {
             scheduled: task.scheduled,
             due: task.due,
             done: task.done,
+            start: task.start,
+            created: task.created,
+            cancelled: task.cancelled,
+            recurrence: task.recurrence,
+            on_completion: task.on_completion,
+            id: task.id,
+            depends_on: task.depends_on,
             priority: task.priority,
             custom: task.custom,
             links: task.links,
