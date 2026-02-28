@@ -200,6 +200,7 @@ export class Vault {
 
     for (const [sourcePath, linkCaches] of data) {
       for (const lc of linkCaches) {
+        if (!lc?.position) continue; // skip entries without position data
         refs.push({
           from: sourcePath,
           line: lc.position.start.line + 1,
