@@ -176,6 +176,58 @@ impl Note {
             content: new_content.into(),
         }
     }
+
+    /// Change the task checkbox symbol on a specific line.
+    ///
+    /// `line` is 1-indexed (consistent with `Task.location.line`).
+    /// The target line must match the pattern `- [.] ...` (with optional leading whitespace).
+    /// Returns a new `Note` with the modified content.
+    pub fn set_task_symbol(&self, line: usize, new_symbol: char) -> Result<Self> {
+        if line == 0 {
+            return Err(crate::error::VaultError::Other(
+                "Line number must be 1-indexed (got 0)".to_string(),
+            ));
+        }
+
+        let lines: Vec<&str> = self.content.lines().collect();
+
+        if line > lines.len() {
+            return Err(crate::error::VaultError::Other(format!(
+                "Line {} is out of range (note has {} lines)",
+                line,
+                lines.len()
+            )));
+        }
+
+        let target_line = lines[line - 1];
+
+        // Match: optional whitespace, `- [`, any single char, `]`, rest
+        let re = regex::Regex::new(r"^(\s*- \[).\](.*)$").unwrap();
+        if !re.is_match(target_line) {
+            return Err(crate::error::VaultError::Other(format!(
+                "Line {} is not a task: {:?}",
+                line, target_line
+            )));
+        }
+
+        let new_line = re.replace(target_line, |caps: &regex::Captures| {
+            format!("{}{}]{}", &caps[1], new_symbol, &caps[2])
+        });
+
+        let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        new_lines[line - 1] = new_line.to_string();
+
+        // Preserve trailing newline if original content had one
+        let mut new_content = new_lines.join("\n");
+        if self.content.ends_with('\n') {
+            new_content.push('\n');
+        }
+
+        Ok(Self {
+            path: self.path.clone(),
+            content: new_content,
+        })
+    }
 }
 
 /// Output representation of a note for CLI.
@@ -305,5 +357,60 @@ mod tests {
         let note = Note::new("note.md", "Tags: #rust #cli");
         let tags = note.tags();
         assert_eq!(tags.len(), 2);
+    }
+
+    #[test]
+    fn test_set_task_symbol_check() {
+        let content = "---\ntitle: Test\n---\n\n- [ ] My task\n- [ ] Another task\n";
+        let note = Note::new("note.md", content);
+        let updated = note.set_task_symbol(5, 'x').unwrap();
+        assert!(updated.content.contains("- [x] My task"));
+        assert!(updated.content.contains("- [ ] Another task"));
+    }
+
+    #[test]
+    fn test_set_task_symbol_uncheck() {
+        let content = "- [x] Done task\n- [ ] Open task\n";
+        let note = Note::new("note.md", content);
+        let updated = note.set_task_symbol(1, ' ').unwrap();
+        assert!(updated.content.contains("- [ ] Done task"));
+        assert!(updated.content.contains("- [ ] Open task"));
+    }
+
+    #[test]
+    fn test_set_task_symbol_preserves_indentation() {
+        let content = "- [ ] Top\n  - [ ] Indented task\n    - [x] Deeply indented\n";
+        let note = Note::new("note.md", content);
+        let updated = note.set_task_symbol(2, 'x').unwrap();
+        assert!(updated.content.contains("  - [x] Indented task"));
+        // Others unchanged
+        assert!(updated.content.contains("- [ ] Top"));
+        assert!(updated.content.contains("    - [x] Deeply indented"));
+    }
+
+    #[test]
+    fn test_set_task_symbol_error_non_task_line() {
+        let content = "# Heading\n- [ ] Task\n";
+        let note = Note::new("note.md", content);
+        let result = note.set_task_symbol(1, 'x');
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a task"));
+    }
+
+    #[test]
+    fn test_set_task_symbol_error_out_of_range() {
+        let content = "- [ ] Only task\n";
+        let note = Note::new("note.md", content);
+        let result = note.set_task_symbol(5, 'x');
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("out of range"));
+    }
+
+    #[test]
+    fn test_set_task_symbol_error_zero_line() {
+        let note = Note::new("note.md", "- [ ] Task\n");
+        let result = note.set_task_symbol(0, 'x');
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("1-indexed"));
     }
 }

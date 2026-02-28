@@ -123,6 +123,11 @@ export declare class JsVault {
   appendContent(path: string, content: string): void
   /** Replace first occurrence of pattern in note content. */
   replaceContent(path: string, pattern: string, replacement: string): void
+  /**
+   * Change the task checkbox symbol on a specific line of a note.
+   * `line` is 1-indexed. `new_symbol` must be a single character.
+   */
+  setTaskSymbol(path: string, line: number, newSymbol: string): void
   /** Inspect a note — returns full JSON representation. */
   inspect(path: string): string
   /** Get incoming links to a note. */

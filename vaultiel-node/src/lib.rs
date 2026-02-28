@@ -429,6 +429,27 @@ impl JsVault {
             .map_err(|e| Error::from_reason(e.to_string()))
     }
 
+    /// Change the task checkbox symbol on a specific line of a note.
+    /// `line` is 1-indexed. `new_symbol` must be a single character.
+    #[napi]
+    pub fn set_task_symbol(&self, path: String, line: u32, new_symbol: String) -> Result<()> {
+        let chars: Vec<char> = new_symbol.chars().collect();
+        if chars.len() != 1 {
+            return Err(Error::from_reason(format!(
+                "new_symbol must be a single character, got {} characters",
+                chars.len()
+            )));
+        }
+
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let updated = note.set_task_symbol(line as usize, chars[0])
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
     /// Inspect a note — returns full JSON representation.
     #[napi]
     pub fn inspect(&self, path: String) -> Result<String> {

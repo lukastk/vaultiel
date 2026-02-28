@@ -431,6 +431,40 @@ export class Vault {
     });
   }
 
+  /** Change the task checkbox symbol on a specific line (1-indexed). */
+  async setTaskSymbol(
+    path: string,
+    line: number,
+    newSymbol: string,
+  ): Promise<void> {
+    if ([...newSymbol].length !== 1) {
+      throw new Error(
+        `newSymbol must be a single character, got ${[...newSymbol].length} characters`,
+      );
+    }
+
+    const file = getFile(this.app, path);
+    await this.app.vault.process(file, (data) => {
+      const lines = data.split("\n");
+      const idx = line - 1; // Convert 1-indexed to 0-indexed
+
+      if (idx < 0 || idx >= lines.length) {
+        throw new Error(
+          `Line ${line} is out of range (note has ${lines.length} lines)`,
+        );
+      }
+
+      const targetLine = lines[idx]!;
+      const taskRe = /^(\s*- \[).\](.*)$/;
+      if (!taskRe.test(targetLine)) {
+        throw new Error(`Line ${line} is not a task: "${targetLine}"`);
+      }
+
+      lines[idx] = targetLine.replace(taskRe, `$1${newSymbol}]$2`);
+      return lines.join("\n");
+    });
+  }
+
   // ==========================================================================
   // Metadata Operations (async)
   // ==========================================================================
