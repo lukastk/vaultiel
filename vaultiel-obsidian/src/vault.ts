@@ -19,6 +19,7 @@ import type {
   Heading,
   BlockId,
   Task,
+  TaskChild,
   TaskConfig,
   VaultielMetadata,
   LinkRef,
@@ -29,7 +30,7 @@ import { parseTags } from "./parsers/tags.js";
 import { parseHeadings, slugify } from "./parsers/headings.js";
 import { parseBlockIds } from "./parsers/block-ids.js";
 import { parseInlineAttrs } from "./parsers/inline-attrs.js";
-import { parseTasks } from "./parsers/tasks.js";
+import { parseTasks, parseTaskTrees } from "./parsers/tasks.js";
 
 declare const crypto: { randomUUID(): string };
 
@@ -315,6 +316,13 @@ export class Vault {
     return tasks;
   }
 
+  /** Parse task trees from a note, including non-task list items as children. */
+  async getTaskTrees(path: string): Promise<TaskChild[]> {
+    const file = getFile(this.app, path);
+    const content = await this.app.vault.cachedRead(file);
+    return parseTaskTrees(content, file.path, this.taskConfig);
+  }
+
   /** Inspect a note — returns full JSON representation. */
   async inspect(path: string): Promise<string> {
     const file = getFile(this.app, path);
@@ -454,7 +462,7 @@ export class Vault {
       }
 
       const targetLine = lines[idx]!;
-      const taskRe = /^(\s*- \[).\](.*)$/;
+      const taskRe = /^(\s*(?:[-*+]|\d+\.) \[).\](.*)$/;
       if (!taskRe.test(targetLine)) {
         throw new Error(`Line ${line} is not a task: "${targetLine}"`);
       }

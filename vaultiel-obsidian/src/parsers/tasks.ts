@@ -4,11 +4,14 @@
  * Ported from vaultiel-rs/src/parser/task.rs
  */
 
-import type { Task, TaskLink, TaskConfig, EmojiFieldDef } from "../types.js";
+import type { Task, TaskLink, TaskConfig, TaskChild, TaskNode, TaskTextItem, EmojiFieldDef } from "../types.js";
 import { findCodeBlockRanges } from "./code-block.js";
 
-// Task line: optional indent, "- [symbol] ", then the rest
-const TASK_REGEX = /^(\s*)- \[(.)\] (.*)$/;
+// Task line: optional indent, list marker (-, *, +, digits.), [symbol], then the rest
+const TASK_REGEX = /^(\s*)([-*+]|\d+\.) \[(.)\] (.*)$/;
+
+// Non-task list item: optional indent, list marker, then the rest
+const LIST_ITEM_REGEX = /^(\s*)([-*+]|\d+\.) (.*)$/;
 
 // ISO date: YYYY-MM-DD
 const DATE_REGEX = /\d{4}-\d{2}-\d{2}/;
@@ -272,8 +275,9 @@ export function parseTasks(
     }
 
     const indentStr = match[1]!;
-    const symbol = `[${match[2]}]`;
-    const rest = match[3]!;
+    const marker = match[2]!;
+    const symbol = `[${match[3]}]`;
+    const rest = match[4]!;
     const indent = countIndent(indentStr);
 
     // Extract block ID
@@ -297,6 +301,7 @@ export function parseTasks(
       file: filePath,
       line: lineNum,
       raw: line,
+      marker,
       symbol,
       description,
       indent,
@@ -308,4 +313,187 @@ export function parseTasks(
   }
 
   return tasks;
+}
+
+/** Get the children array of a TaskChild node. */
+function getChildren(node: TaskChild): TaskChild[] {
+  return node.children;
+}
+
+/** Set the children array of a TaskChild node. */
+function setChildren(node: TaskChild, children: TaskChild[]): void {
+  node.children = children;
+}
+
+/**
+ * Parse task trees from content, including non-task list items as children.
+ *
+ * Returns a tree of TaskChild nodes. Top-level tasks become root nodes.
+ * Non-task list items nested under tasks become Text children.
+ * Non-task list items at top level (no task ancestor) are ignored.
+ */
+export function parseTaskTrees(
+  content: string,
+  filePath: string,
+  config: TaskConfig,
+): TaskChild[] {
+  const lines = content.split("\n");
+  const codeRanges = findCodeBlockRanges(content);
+  const result: TaskChild[] = [];
+  // Stack: (indent, indexPath). indexPath navigates from root to the node.
+  const stack: Array<{ indent: number; path: number[] }> = [];
+
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const lineNum = lineIdx + 1;
+    const line = lines[lineIdx]!;
+
+    // Skip lines inside code blocks
+    if (codeRanges.some((r) => lineNum >= r.startLine && lineNum <= r.endLine)) continue;
+
+    // Try task regex first
+    const taskMatch = TASK_REGEX.exec(line);
+    if (taskMatch) {
+      const indentStr = taskMatch[1]!;
+      const marker = taskMatch[2]!;
+      const symbol = `[${taskMatch[3]}]`;
+      const rest = taskMatch[4]!;
+      const indent = countIndent(indentStr);
+
+      const [restWithoutBlock, blockId] = extractBlockId(rest);
+      const [description, metadata] = extractMetadata(restWithoutBlock, config);
+      const links = extractTaskLinks(description);
+      const tags = extractTaskTags(description);
+
+      const node: TaskChild = {
+        type: 'task',
+        file: filePath,
+        line: lineNum,
+        raw: line,
+        marker,
+        symbol,
+        description,
+        indent,
+        metadata,
+        links,
+        tags,
+        blockId,
+        children: [],
+      };
+
+      // Pop stack entries at same or deeper indent
+      while (stack.length > 0 && stack[stack.length - 1]!.indent >= indent) {
+        stack.pop();
+      }
+
+      if (stack.length === 0) {
+        // Top-level task
+        const idx = result.length;
+        result.push(node);
+        stack.push({ indent, path: [idx] });
+      } else {
+        // Nested under parent
+        const parentPath = stack[stack.length - 1]!.path;
+        const parentChildren = getChildrenAtPath(result, parentPath);
+        const childIdx = parentChildren.length;
+        parentChildren.push(node);
+        stack.push({ indent, path: [...parentPath, childIdx] });
+      }
+      continue;
+    }
+
+    // Try list item regex (non-task)
+    const listMatch = LIST_ITEM_REGEX.exec(line);
+    if (listMatch) {
+      const indentStr = listMatch[1]!;
+      const marker = listMatch[2]!;
+      const rest = listMatch[3]!;
+      const indent = countIndent(indentStr);
+
+      const [contentText, blockId] = extractBlockId(rest);
+
+      const node: TaskChild = {
+        type: 'text',
+        file: filePath,
+        line: lineNum,
+        raw: line,
+        content: contentText,
+        marker,
+        indent,
+        blockId,
+        children: [],
+      };
+
+      // Pop stack entries at same or deeper indent
+      while (stack.length > 0 && stack[stack.length - 1]!.indent >= indent) {
+        stack.pop();
+      }
+
+      if (stack.length === 0) {
+        // Top-level text item with no task ancestor — ignored
+        continue;
+      }
+
+      // Nested under parent
+      const parentPath = stack[stack.length - 1]!.path;
+      const parentChildren = getChildrenAtPath(result, parentPath);
+      const childIdx = parentChildren.length;
+      parentChildren.push(node);
+      stack.push({ indent, path: [...parentPath, childIdx] });
+      continue;
+    }
+
+    // Non-list line: reset stack at this indent level
+    const lineIndent = countIndent(line);
+    while (stack.length > 0 && stack[stack.length - 1]!.indent >= lineIndent) {
+      stack.pop();
+    }
+  }
+
+  return result;
+}
+
+/** Navigate to a node by index path and return its children array. */
+function getChildrenAtPath(roots: TaskChild[], path: number[]): TaskChild[] {
+  if (path.length === 1) {
+    return roots[path[0]!]!.children;
+  }
+
+  let current: TaskChild[] = roots[path[0]!]!.children;
+  for (let i = 1; i < path.length - 1; i++) {
+    current = current[path[i]!]!.children;
+  }
+
+  return current[path[path.length - 1]!]!.children;
+}
+
+/**
+ * Format a task tree back to markdown.
+ *
+ * Recursively renders each node with proper indentation.
+ */
+export function formatTaskTree(
+  children: TaskChild[],
+  indentStr: string = "    ",
+): string {
+  const lines: string[] = [];
+  formatTaskTreeRecursive(children, indentStr, 0, lines);
+  return lines.join("\n");
+}
+
+function formatTaskTreeRecursive(
+  children: TaskChild[],
+  indentStr: string,
+  depth: number,
+  lines: string[],
+): void {
+  const prefix = indentStr.repeat(depth);
+  for (const child of children) {
+    if (child.type === 'task') {
+      lines.push(`${prefix}${child.marker} ${child.symbol} ${child.description}`);
+      formatTaskTreeRecursive(child.children, indentStr, depth + 1, lines);
+    } else {
+      lines.push(`${prefix}${child.marker} ${child.content}`);
+      formatTaskTreeRecursive(child.children, indentStr, depth + 1, lines);
+    }
+  }
 }

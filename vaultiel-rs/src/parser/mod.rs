@@ -18,5 +18,5 @@ pub use frontmatter::{
 pub use heading::{find_heading_by_slug, find_heading_by_text, parse_headings, slugify};
 pub use inline_attr::parse_inline_attrs;
 pub use tag::parse_tags;
-pub use task::{build_task_hierarchy, format_task, parse_relative_date, parse_tasks};
+pub use task::{build_task_hierarchy, format_task, format_task_tree, parse_relative_date, parse_task_trees, parse_tasks};
 pub use wikilink::{parse_all_links, parse_embeds, parse_links};

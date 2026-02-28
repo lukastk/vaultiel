@@ -49,6 +49,7 @@ export interface Task {
   file: string;
   line: number;
   raw: string;
+  marker: string;
   symbol: string;
   description: string;
   indent: number;
@@ -57,6 +58,39 @@ export interface Task {
   tags: string[];
   blockId?: string;
 }
+
+/** A hierarchical task node with children. */
+export interface TaskNode {
+  type: 'task';
+  file: string;
+  line: number;
+  raw: string;
+  marker: string;
+  symbol: string;
+  description: string;
+  indent: number;
+  metadata: Record<string, string>;
+  links: TaskLink[];
+  tags: string[];
+  blockId?: string;
+  children: TaskChild[];
+}
+
+/** A non-task list item (bullet or numbered) found under a task. */
+export interface TaskTextItem {
+  type: 'text';
+  file: string;
+  line: number;
+  raw: string;
+  content: string;
+  marker: string;
+  indent: number;
+  blockId?: string;
+  children: TaskChild[];
+}
+
+/** A child node in a task tree: either a task or a text item. */
+export type TaskChild = TaskNode | TaskTextItem;
 
 /** Vaultiel metadata for a note. */
 export interface VaultielMetadata {

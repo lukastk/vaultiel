@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use vaultiel::config::{EmojiFieldDef, EmojiValueType, TaskConfig};
 use vaultiel::graph::LinkGraph;
 use vaultiel::metadata::{find_by_id, get_metadata, init_metadata};
-use vaultiel::parser::{parse_all_links, parse_block_ids, parse_headings, parse_tags, parse_tasks};
+use vaultiel::parser::{parse_all_links, parse_block_ids, parse_headings, parse_tags, parse_task_trees, parse_tasks};
 use vaultiel::Vault;
 
 // ============================================================================
@@ -78,6 +78,7 @@ pub struct JsTask {
     pub file: String,
     pub line: u32,
     pub raw: String,
+    pub marker: String,
     pub symbol: String,
     pub description: String,
     pub indent: u32,
@@ -153,6 +154,62 @@ fn js_config_to_rust(js_config: &JsTaskConfig) -> TaskConfig {
                 order: f.order,
             })
             .collect(),
+    }
+}
+
+// ============================================================================
+// Task tree JSON serialization (camelCase, flattened location)
+// ============================================================================
+
+fn task_children_to_json(children: &[vaultiel::TaskChild]) -> serde_json::Value {
+    serde_json::Value::Array(children.iter().map(task_child_to_json).collect())
+}
+
+fn task_child_to_json(child: &vaultiel::TaskChild) -> serde_json::Value {
+    match child {
+        vaultiel::TaskChild::Task(task) => {
+            let mut map = serde_json::Map::new();
+            map.insert("type".into(), "task".into());
+            map.insert("file".into(), task.location.file.to_string_lossy().to_string().into());
+            map.insert("line".into(), (task.location.line as u64).into());
+            map.insert("raw".into(), task.raw.clone().into());
+            map.insert("marker".into(), task.marker.clone().into());
+            map.insert("symbol".into(), task.symbol.clone().into());
+            map.insert("description".into(), task.description.clone().into());
+            map.insert("indent".into(), (task.indent as u64).into());
+            map.insert("metadata".into(), serde_json::to_value(&task.metadata).unwrap_or_default());
+            map.insert("links".into(), serde_json::Value::Array(
+                task.links.iter().map(|l| {
+                    let mut lm = serde_json::Map::new();
+                    lm.insert("to".into(), l.to.clone().into());
+                    if let Some(ref alias) = l.alias {
+                        lm.insert("alias".into(), alias.clone().into());
+                    }
+                    serde_json::Value::Object(lm)
+                }).collect()
+            ));
+            map.insert("tags".into(), serde_json::to_value(&task.tags).unwrap_or_default());
+            if let Some(ref block_id) = task.block_id {
+                map.insert("blockId".into(), block_id.clone().into());
+            }
+            map.insert("children".into(), task_children_to_json(&task.children));
+            serde_json::Value::Object(map)
+        }
+        vaultiel::TaskChild::Text(text) => {
+            let mut map = serde_json::Map::new();
+            map.insert("type".into(), "text".into());
+            map.insert("file".into(), text.location.file.to_string_lossy().to_string().into());
+            map.insert("line".into(), (text.location.line as u64).into());
+            map.insert("raw".into(), text.raw.clone().into());
+            map.insert("content".into(), text.content.clone().into());
+            map.insert("marker".into(), text.marker.clone().into());
+            map.insert("indent".into(), (text.indent as u64).into());
+            if let Some(ref block_id) = text.block_id {
+                map.insert("blockId".into(), block_id.clone().into());
+            }
+            map.insert("children".into(), task_children_to_json(&text.children));
+            serde_json::Value::Object(map)
+        }
     }
 }
 
@@ -386,6 +443,7 @@ impl JsVault {
                 file: t.location.file.to_string_lossy().to_string(),
                 line: t.location.line as u32,
                 raw: t.raw,
+                marker: t.marker,
                 symbol: t.symbol,
                 description: t.description,
                 indent: t.indent as u32,
@@ -398,6 +456,24 @@ impl JsVault {
                 block_id: t.block_id,
             })
             .collect())
+    }
+
+    /// Parse task trees from a note, returning a JSON string with the hierarchical structure.
+    ///
+    /// Returns a JSON array of TaskChild nodes (discriminated union with "type": "task" | "text").
+    /// Uses JSON serialization since napi-rs cannot represent Rust tagged enums directly.
+    #[napi]
+    pub fn get_task_trees(&self, path: String) -> Result<String> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        let trees = parse_task_trees(&note.content, &note_path, &self.task_config);
+
+        // Convert to camelCase JSON using a custom serialization
+        let json_value = task_children_to_json(&trees);
+        serde_json::to_string(&json_value)
+            .map_err(|e| Error::from_reason(e.to_string()))
     }
 
     // ========================================================================

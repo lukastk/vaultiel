@@ -209,6 +209,9 @@ pub struct Task {
     /// The raw task line as it appears in the note.
     pub raw: String,
 
+    /// The list marker (e.g., "-", "*", "+", "1.").
+    pub marker: String,
+
     /// The task symbol (e.g., "[ ]", "[x]", "[>]").
     pub symbol: String,
 
@@ -270,6 +273,9 @@ pub struct HierarchicalTask {
     /// The raw task line as it appears in the note.
     pub raw: String,
 
+    /// The list marker (e.g., "-", "*", "+", "1.").
+    pub marker: String,
+
     /// The task symbol (e.g., "[ ]", "[x]", "[>]").
     pub symbol: String,
 
@@ -283,9 +289,9 @@ pub struct HierarchicalTask {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_line: Option<usize>,
 
-    /// Child tasks.
+    /// Child nodes (tasks or text items).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub children: Vec<HierarchicalTask>,
+    pub children: Vec<TaskChild>,
 
     /// Generic metadata fields.
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
@@ -304,11 +310,47 @@ pub struct HierarchicalTask {
     pub block_id: Option<String>,
 }
 
+/// A child node in a task tree: either a task or a text item.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TaskChild {
+    Task(HierarchicalTask),
+    Text(TaskTextItem),
+}
+
+/// A non-task list item (bullet or numbered) found under a task.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskTextItem {
+    /// Location in the vault.
+    pub location: TaskLocation,
+
+    /// The raw line as it appears in the note.
+    pub raw: String,
+
+    /// The text content (without marker).
+    pub content: String,
+
+    /// The list marker (e.g., "-", "*", "+", "1.").
+    pub marker: String,
+
+    /// Indentation level (0 = top-level).
+    pub indent: usize,
+
+    /// Block ID attached to this item.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_id: Option<String>,
+
+    /// Child nodes (tasks or text items).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<TaskChild>,
+}
+
 impl From<Task> for HierarchicalTask {
     fn from(task: Task) -> Self {
         HierarchicalTask {
             location: task.location,
             raw: task.raw,
+            marker: task.marker,
             symbol: task.symbol,
             description: task.description,
             indent: task.indent,

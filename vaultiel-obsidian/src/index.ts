@@ -22,6 +22,9 @@ export type {
   BlockId,
   TaskLink,
   Task,
+  TaskNode,
+  TaskTextItem,
+  TaskChild,
   VaultielMetadata,
   LinkRef,
   InlineAttr,
@@ -36,7 +39,7 @@ export { parseTags } from "./parsers/tags.js";
 export { parseHeadings, slugify } from "./parsers/headings.js";
 export { parseBlockIds } from "./parsers/block-ids.js";
 export { parseInlineAttrs } from "./parsers/inline-attrs.js";
-export { parseTasks } from "./parsers/tasks.js";
+export { parseTasks, parseTaskTrees, formatTaskTree } from "./parsers/tasks.js";
 
 // Obsidian Tasks plugin helpers (not part of VaultAdapter)
 export {

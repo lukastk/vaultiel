@@ -3,16 +3,22 @@
 use crate::config::{EmojiValueType, TaskConfig};
 use crate::parser::code_block::find_code_block_ranges;
 use crate::parser::wikilink::parse_links;
-use crate::types::{Task, TaskLink, TaskLocation};
+use crate::types::{HierarchicalTask, Task, TaskChild, TaskLink, TaskLocation, TaskTextItem};
 use regex::Regex;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
 /// Regex for parsing task lines.
-/// Matches: optional indent, "- [symbol] ", then the rest.
+/// Matches: optional indent, list marker (-, *, +, or digits.), [symbol], then the rest.
 static TASK_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(\s*)- \[(.)\] (.*)$").unwrap()
+    Regex::new(r"^(\s*)([-*+]|\d+\.) \[(.)\] (.*)$").unwrap()
+});
+
+/// Regex for parsing non-task list items.
+/// Matches: optional indent, list marker (-, *, +, or digits.), then the rest.
+static LIST_ITEM_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(\s*)([-*+]|\d+\.) (.*)$").unwrap()
 });
 
 /// Regex for extracting dates (ISO format: YYYY-MM-DD).
@@ -90,8 +96,9 @@ fn parse_task_line(
     let caps = TASK_REGEX.captures(line)?;
 
     let indent_str = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-    let symbol = format!("[{}]", caps.get(2).map(|m| m.as_str()).unwrap_or(" "));
-    let rest = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+    let marker = caps.get(2).map(|m| m.as_str()).unwrap_or("-").to_string();
+    let symbol = format!("[{}]", caps.get(3).map(|m| m.as_str()).unwrap_or(" "));
+    let rest = caps.get(4).map(|m| m.as_str()).unwrap_or("");
 
     let indent = count_indent(indent_str);
 
@@ -113,6 +120,7 @@ fn parse_task_line(
             line: line_num,
         },
         raw: line.to_string(),
+        marker,
         symbol,
         description,
         indent,
@@ -319,7 +327,7 @@ fn extract_task_tags(description: &str) -> Vec<String> {
 }
 
 /// Build hierarchical task tree from flat task list.
-pub fn build_task_hierarchy(tasks: Vec<Task>) -> Vec<crate::types::HierarchicalTask> {
+pub fn build_task_hierarchy(tasks: Vec<Task>) -> Vec<HierarchicalTask> {
     if tasks.is_empty() {
         return Vec::new();
     }
@@ -344,9 +352,7 @@ pub fn build_task_hierarchy(tasks: Vec<Task>) -> Vec<crate::types::HierarchicalT
 }
 
 /// Build hierarchy for tasks within a single file.
-fn build_file_hierarchy(tasks: Vec<Task>) -> Vec<crate::types::HierarchicalTask> {
-    use crate::types::HierarchicalTask;
-
+fn build_file_hierarchy(tasks: Vec<Task>) -> Vec<HierarchicalTask> {
     let mut result: Vec<HierarchicalTask> = Vec::new();
     let mut task_map: HashMap<usize, usize> = HashMap::new(); // line -> index in result
 
@@ -376,32 +382,230 @@ fn build_file_hierarchy(tasks: Vec<Task>) -> Vec<crate::types::HierarchicalTask>
 
 /// Add a child task to the tree at the correct parent.
 fn add_child_to_tree(
-    result: &mut [crate::types::HierarchicalTask],
+    result: &mut [HierarchicalTask],
     parent_idx: usize,
-    child: crate::types::HierarchicalTask,
+    child: HierarchicalTask,
 ) {
     // Find the actual parent (might be nested deeper)
     fn find_and_add(
-        tasks: &mut [crate::types::HierarchicalTask],
+        children: &mut [TaskChild],
         parent_line: usize,
-        child: crate::types::HierarchicalTask,
+        child: HierarchicalTask,
     ) -> bool {
-        for task in tasks.iter_mut() {
-            if task.location.line == parent_line {
-                task.children.push(child);
-                return true;
-            }
-            if find_and_add(&mut task.children, parent_line, child.clone()) {
-                return true;
+        for tc in children.iter_mut() {
+            if let TaskChild::Task(task) = tc {
+                if task.location.line == parent_line {
+                    task.children.push(TaskChild::Task(child));
+                    return true;
+                }
+                if find_and_add(&mut task.children, parent_line, child.clone()) {
+                    return true;
+                }
             }
         }
         false
     }
 
-    let parent_line = result[parent_idx].location.line;
-    if !find_and_add(result, parent_line, child.clone()) {
-        // Fallback: add to parent's children directly
-        result[parent_idx].children.push(child);
+    let parent = &mut result[parent_idx];
+    if parent.location.line == child.parent_line.unwrap_or(0) {
+        parent.children.push(TaskChild::Task(child));
+    } else if !find_and_add(&mut parent.children, child.parent_line.unwrap_or(0), child.clone()) {
+        parent.children.push(TaskChild::Task(child));
+    }
+}
+
+/// Parse task trees from content, including non-task list items as children.
+///
+/// Returns a tree of `TaskChild` nodes. Top-level tasks become root nodes.
+/// Non-task list items nested under tasks become `Text` children.
+/// Non-task list items at top level (no task ancestor) are ignored.
+pub fn parse_task_trees(content: &str, file_path: &PathBuf, config: &TaskConfig) -> Vec<TaskChild> {
+    let lines: Vec<&str> = content.lines().collect();
+    let code_ranges = find_code_block_ranges(content);
+    let mut result: Vec<TaskChild> = Vec::new();
+    // Stack: (indent, pointer into tree). We use indices to navigate.
+    // Each entry: (indent_level, is_task, index_path)
+    // index_path: sequence of child indices from root to reach this node
+    let mut stack: Vec<(usize, Vec<usize>)> = Vec::new();
+
+    for (line_idx, line) in lines.iter().enumerate() {
+        let line_num = line_idx + 1;
+
+        // Skip lines inside code blocks
+        if code_ranges.iter().any(|range| line_num >= range.start_line && line_num <= range.end_line) {
+            continue;
+        }
+
+        // Try task regex first
+        if let Some(caps) = TASK_REGEX.captures(line) {
+            let indent_str = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            let marker = caps.get(2).map(|m| m.as_str()).unwrap_or("-").to_string();
+            let symbol = format!("[{}]", caps.get(3).map(|m| m.as_str()).unwrap_or(" "));
+            let rest = caps.get(4).map(|m| m.as_str()).unwrap_or("");
+            let indent = count_indent(indent_str);
+
+            let (rest, block_id) = extract_block_id(rest);
+            let (description, metadata) = extract_metadata(&rest, config);
+            let links = extract_task_links(&description);
+            let tags = extract_task_tags(&description);
+
+            let node = TaskChild::Task(HierarchicalTask {
+                location: TaskLocation { file: file_path.clone(), line: line_num },
+                raw: line.to_string(),
+                marker,
+                symbol,
+                description,
+                indent,
+                parent_line: None,
+                children: Vec::new(),
+                metadata,
+                links,
+                tags,
+                block_id,
+            });
+
+            // Pop stack entries at same or deeper indent
+            while !stack.is_empty() && stack.last().unwrap().0 >= indent {
+                stack.pop();
+            }
+
+            if stack.is_empty() {
+                // Top-level task
+                let idx = result.len();
+                result.push(node);
+                stack.push((indent, vec![idx]));
+            } else {
+                // Nested under parent
+                let parent_path = stack.last().unwrap().1.clone();
+                let child_idx = append_child_at_path(&mut result, &parent_path, node);
+                let mut new_path = parent_path;
+                new_path.push(child_idx);
+                stack.push((indent, new_path));
+            }
+            continue;
+        }
+
+        // Try list item regex (non-task)
+        if let Some(caps) = LIST_ITEM_REGEX.captures(line) {
+            let indent_str = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            let marker = caps.get(2).map(|m| m.as_str()).unwrap_or("-").to_string();
+            let rest = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+            let indent = count_indent(indent_str);
+
+            let (content_text, block_id) = extract_block_id(rest);
+
+            let node = TaskChild::Text(TaskTextItem {
+                location: TaskLocation { file: file_path.clone(), line: line_num },
+                raw: line.to_string(),
+                content: content_text,
+                marker,
+                indent,
+                block_id,
+                children: Vec::new(),
+            });
+
+            // Pop stack entries at same or deeper indent
+            while !stack.is_empty() && stack.last().unwrap().0 >= indent {
+                stack.pop();
+            }
+
+            if stack.is_empty() {
+                // Top-level text item with no task ancestor — ignored
+                continue;
+            }
+
+            // Nested under parent (task or text)
+            let parent_path = stack.last().unwrap().1.clone();
+            let child_idx = append_child_at_path(&mut result, &parent_path, node);
+            let mut new_path = parent_path;
+            new_path.push(child_idx);
+            stack.push((indent, new_path));
+            continue;
+        }
+
+        // Non-list line: reset stack at this indent level
+        let line_indent = count_indent(line);
+        while !stack.is_empty() && stack.last().unwrap().0 >= line_indent {
+            stack.pop();
+        }
+    }
+
+    result
+}
+
+/// Navigate to a node at the given index path and append a child to it.
+/// Returns the index of the newly appended child within that node's children.
+fn append_child_at_path(roots: &mut [TaskChild], path: &[usize], child: TaskChild) -> usize {
+    if path.len() == 1 {
+        let children = match &mut roots[path[0]] {
+            TaskChild::Task(t) => &mut t.children,
+            TaskChild::Text(t) => &mut t.children,
+        };
+        let idx = children.len();
+        children.push(child);
+        return idx;
+    }
+
+    // Navigate deeper
+    let mut current_children = match &mut roots[path[0]] {
+        TaskChild::Task(t) => &mut t.children,
+        TaskChild::Text(t) => &mut t.children,
+    };
+
+    for &idx in &path[1..path.len() - 1] {
+        current_children = match &mut current_children[idx] {
+            TaskChild::Task(t) => &mut t.children,
+            TaskChild::Text(t) => &mut t.children,
+        };
+    }
+
+    let last_idx = path[path.len() - 1];
+    let target_children = match &mut current_children[last_idx] {
+        TaskChild::Task(t) => &mut t.children,
+        TaskChild::Text(t) => &mut t.children,
+    };
+    let idx = target_children.len();
+    target_children.push(child);
+    idx
+}
+
+/// Format a task tree back to markdown.
+///
+/// Recursively renders each node with proper indentation.
+pub fn format_task_tree(children: &[TaskChild], indent_str: &str, config: &TaskConfig) -> String {
+    let mut lines = Vec::new();
+    format_task_tree_recursive(children, indent_str, 0, config, &mut lines);
+    lines.join("\n")
+}
+
+fn format_task_tree_recursive(
+    children: &[TaskChild],
+    indent_str: &str,
+    depth: usize,
+    config: &TaskConfig,
+    lines: &mut Vec<String>,
+) {
+    let prefix = indent_str.repeat(depth);
+    for child in children {
+        match child {
+            TaskChild::Task(task) => {
+                let formatted = format_task(
+                    &FormatTaskParams {
+                        description: &task.description,
+                        symbol: &task.symbol,
+                        marker: &task.marker,
+                        metadata: &task.metadata,
+                    },
+                    config,
+                );
+                lines.push(format!("{}{}", prefix, formatted));
+                format_task_tree_recursive(&task.children, indent_str, depth + 1, config, lines);
+            }
+            TaskChild::Text(text) => {
+                lines.push(format!("{}{} {}", prefix, text.marker, text.content));
+                format_task_tree_recursive(&text.children, indent_str, depth + 1, config, lines);
+            }
+        }
     }
 }
 
@@ -410,6 +614,7 @@ fn add_child_to_tree(
 pub struct FormatTaskParams<'a> {
     pub description: &'a str,
     pub symbol: &'a str,
+    pub marker: &'a str,
     pub metadata: &'a HashMap<String, String>,
 }
 
@@ -420,6 +625,7 @@ impl<'a> Default for FormatTaskParams<'a> {
         Self {
             description: "",
             symbol: "[ ]",
+            marker: "-",
             metadata: &EMPTY_MAP,
         }
     }
@@ -429,7 +635,7 @@ impl<'a> Default for FormatTaskParams<'a> {
 ///
 /// Iterates sorted fields and emits present metadata in order.
 pub fn format_task(params: &FormatTaskParams, config: &TaskConfig) -> String {
-    let mut parts = vec![format!("- {} {}", params.symbol, params.description)];
+    let mut parts = vec![format!("{} {} {}", params.marker, params.symbol, params.description)];
 
     for field in config.sorted_fields() {
         if let Some(value) = params.metadata.get(&field.field_name) {
@@ -530,6 +736,7 @@ mod tests {
         let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].marker, "-");
         assert_eq!(tasks[0].symbol, "[ ]");
         assert_eq!(tasks[0].description, "A simple task");
         assert_eq!(tasks[0].indent, 0);
@@ -637,6 +844,7 @@ mod tests {
             &FormatTaskParams {
                 description: "My task",
                 symbol: "[ ]",
+                marker: "-",
                 metadata: &metadata,
             },
             &config,
@@ -714,6 +922,7 @@ mod tests {
             &FormatTaskParams {
                 description: "Task",
                 symbol: "[ ]",
+                marker: "-",
                 metadata: &metadata,
             },
             &config,
@@ -792,6 +1001,7 @@ mod tests {
                     line: 1,
                 },
                 raw: "- [ ] Parent".to_string(),
+                marker: "-".to_string(),
                 symbol: "[ ]".to_string(),
                 description: "Parent".to_string(),
                 indent: 0,
@@ -807,6 +1017,7 @@ mod tests {
                     line: 2,
                 },
                 raw: "- [ ] Child".to_string(),
+                marker: "-".to_string(),
                 symbol: "[ ]".to_string(),
                 description: "Child".to_string(),
                 indent: 1,
@@ -823,6 +1034,179 @@ mod tests {
         assert_eq!(hierarchy.len(), 1);
         assert_eq!(hierarchy[0].description, "Parent");
         assert_eq!(hierarchy[0].children.len(), 1);
-        assert_eq!(hierarchy[0].children[0].description, "Child");
+        match &hierarchy[0].children[0] {
+            TaskChild::Task(child) => assert_eq!(child.description, "Child"),
+            _ => panic!("Expected TaskChild::Task"),
+        }
+    }
+
+    #[test]
+    fn test_parse_tasks_with_different_markers() {
+        let content = "* [ ] Star task\n+ [ ] Plus task\n1. [ ] Numbered task";
+        let path = PathBuf::from("test.md");
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
+
+        assert_eq!(tasks.len(), 3);
+        assert_eq!(tasks[0].marker, "*");
+        assert_eq!(tasks[0].description, "Star task");
+        assert_eq!(tasks[1].marker, "+");
+        assert_eq!(tasks[1].description, "Plus task");
+        assert_eq!(tasks[2].marker, "1.");
+        assert_eq!(tasks[2].description, "Numbered task");
+    }
+
+    #[test]
+    fn test_parse_task_trees_basic() {
+        let content = "- [ ] My task\n    - [ ] My subtask\n        - My subtask's bullet point\n        * My subtask's other bullet point\n    * My task's bullet point\n    1. My task's other bullet point\n    2. [ ] My other subtask";
+        let path = PathBuf::from("test.md");
+        let config = TaskConfig::empty();
+        let trees = parse_task_trees(content, &path, &config);
+
+        assert_eq!(trees.len(), 1);
+        match &trees[0] {
+            TaskChild::Task(task) => {
+                assert_eq!(task.description, "My task");
+                assert_eq!(task.marker, "-");
+                assert_eq!(task.children.len(), 4); // subtask, bullet, numbered, other subtask
+
+                // First child: subtask
+                match &task.children[0] {
+                    TaskChild::Task(subtask) => {
+                        assert_eq!(subtask.description, "My subtask");
+                        assert_eq!(subtask.marker, "-");
+                        assert_eq!(subtask.children.len(), 2);
+                        // Sub-children are text items
+                        match &subtask.children[0] {
+                            TaskChild::Text(text) => {
+                                assert_eq!(text.content, "My subtask's bullet point");
+                                assert_eq!(text.marker, "-");
+                            }
+                            _ => panic!("Expected TaskChild::Text"),
+                        }
+                        match &subtask.children[1] {
+                            TaskChild::Text(text) => {
+                                assert_eq!(text.content, "My subtask's other bullet point");
+                                assert_eq!(text.marker, "*");
+                            }
+                            _ => panic!("Expected TaskChild::Text"),
+                        }
+                    }
+                    _ => panic!("Expected TaskChild::Task"),
+                }
+
+                // Second child: text bullet
+                match &task.children[1] {
+                    TaskChild::Text(text) => {
+                        assert_eq!(text.content, "My task's bullet point");
+                        assert_eq!(text.marker, "*");
+                    }
+                    _ => panic!("Expected TaskChild::Text"),
+                }
+
+                // Third child: numbered text
+                match &task.children[2] {
+                    TaskChild::Text(text) => {
+                        assert_eq!(text.content, "My task's other bullet point");
+                        assert_eq!(text.marker, "1.");
+                    }
+                    _ => panic!("Expected TaskChild::Text"),
+                }
+
+                // Fourth child: subtask with numbered marker
+                match &task.children[3] {
+                    TaskChild::Task(subtask) => {
+                        assert_eq!(subtask.description, "My other subtask");
+                        assert_eq!(subtask.marker, "2.");
+                    }
+                    _ => panic!("Expected TaskChild::Task"),
+                }
+            }
+            _ => panic!("Expected TaskChild::Task"),
+        }
+    }
+
+    #[test]
+    fn test_parse_task_trees_ignores_top_level_text() {
+        let content = "- Just a bullet point\n- [ ] A real task\n    - Nested under task";
+        let path = PathBuf::from("test.md");
+        let config = TaskConfig::empty();
+        let trees = parse_task_trees(content, &path, &config);
+
+        // Top-level text item is ignored, only the task is returned
+        assert_eq!(trees.len(), 1);
+        match &trees[0] {
+            TaskChild::Task(task) => {
+                assert_eq!(task.description, "A real task");
+                assert_eq!(task.children.len(), 1);
+                match &task.children[0] {
+                    TaskChild::Text(text) => assert_eq!(text.content, "Nested under task"),
+                    _ => panic!("Expected TaskChild::Text"),
+                }
+            }
+            _ => panic!("Expected TaskChild::Task"),
+        }
+    }
+
+    #[test]
+    fn test_format_task_tree() {
+        let config = TaskConfig::empty();
+        let children = vec![
+            TaskChild::Task(HierarchicalTask {
+                location: TaskLocation { file: PathBuf::from("test.md"), line: 1 },
+                raw: "- [ ] Parent task".to_string(),
+                marker: "-".to_string(),
+                symbol: "[ ]".to_string(),
+                description: "Parent task".to_string(),
+                indent: 0,
+                parent_line: None,
+                children: vec![
+                    TaskChild::Task(HierarchicalTask {
+                        location: TaskLocation { file: PathBuf::from("test.md"), line: 2 },
+                        raw: "    - [ ] Child task".to_string(),
+                        marker: "-".to_string(),
+                        symbol: "[ ]".to_string(),
+                        description: "Child task".to_string(),
+                        indent: 1,
+                        parent_line: None,
+                        children: vec![],
+                        metadata: HashMap::new(),
+                        links: vec![],
+                        tags: vec![],
+                        block_id: None,
+                    }),
+                    TaskChild::Text(TaskTextItem {
+                        location: TaskLocation { file: PathBuf::from("test.md"), line: 3 },
+                        raw: "    * A bullet point".to_string(),
+                        content: "A bullet point".to_string(),
+                        marker: "*".to_string(),
+                        indent: 1,
+                        block_id: None,
+                        children: vec![],
+                    }),
+                ],
+                metadata: HashMap::new(),
+                links: vec![],
+                tags: vec![],
+                block_id: None,
+            }),
+        ];
+
+        let result = format_task_tree(&children, "    ", &config);
+        assert_eq!(result, "- [ ] Parent task\n    - [ ] Child task\n    * A bullet point");
+    }
+
+    #[test]
+    fn test_format_task_with_star_marker() {
+        let config = obsidian_tasks_config();
+        let result = format_task(
+            &FormatTaskParams {
+                description: "Star task",
+                symbol: "[x]",
+                marker: "*",
+                metadata: &HashMap::new(),
+            },
+            &config,
+        );
+        assert_eq!(result, "* [x] Star task");
     }
 }

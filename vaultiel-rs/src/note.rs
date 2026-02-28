@@ -201,8 +201,8 @@ impl Note {
 
         let target_line = lines[line - 1];
 
-        // Match: optional whitespace, `- [`, any single char, `]`, rest
-        let re = regex::Regex::new(r"^(\s*- \[).\](.*)$").unwrap();
+        // Match: optional whitespace, list marker, ` [`, any single char, `]`, rest
+        let re = regex::Regex::new(r"^(\s*(?:[-*+]|\d+\.) \[).\](.*)$").unwrap();
         if !re.is_match(target_line) {
             return Err(crate::error::VaultError::Other(format!(
                 "Line {} is not a task: {:?}",

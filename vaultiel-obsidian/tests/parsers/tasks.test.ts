@@ -31,9 +31,18 @@ describe("parseTasks", () => {
   it("parses a simple task", () => {
     const tasks = parseTasks("- [ ] A simple task", "test.md", config);
     expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.marker).toBe("-");
     expect(tasks[0]!.symbol).toBe("[ ]");
     expect(tasks[0]!.description).toBe("A simple task");
     expect(tasks[0]!.indent).toBe(0);
+  });
+
+  it("parses tasks with different markers", () => {
+    const tasks = parseTasks("* [ ] Star\n+ [ ] Plus\n1. [ ] Numbered", "test.md", config);
+    expect(tasks).toHaveLength(3);
+    expect(tasks[0]!.marker).toBe("*");
+    expect(tasks[1]!.marker).toBe("+");
+    expect(tasks[2]!.marker).toBe("1.");
   });
 
   it("parses a completed task", () => {
