@@ -1,13 +1,8 @@
 # Rust
 target/
-vaultiel-rs/target/
 
-# Node (for future TypeScript bindings)
+# Node
 node_modules/
-vaultiel-ts/dist/
-
-# Python (for future Python bindings)
-__pycache__/
-*.pyc
-vaultiel-py/.venv/
-*.egg-info/
+vaultiel-node/index.js
+vaultiel-node/*.node
+vaultiel-obsidian/dist/
