@@ -151,7 +151,6 @@ pub fn extract_id(vault: &Vault, path: &Path) -> Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use tempfile::TempDir;
     use std::fs;
 
@@ -185,8 +184,7 @@ Content.
 "#;
         fs::write(temp_dir.path().join("with-meta.md"), note_with_meta).unwrap();
 
-        let config = Config::default();
-        let vault = Vault::new(temp_dir.path().to_path_buf(), config).unwrap();
+        let vault = Vault::new(temp_dir.path().to_path_buf()).unwrap();
 
         (temp_dir, vault)
     }

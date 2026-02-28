@@ -2,27 +2,22 @@
 name = "vaultiel"
 version = "0.1.0"
 edition = "2024"
-description = "A CLI and library for programmatically interacting with Obsidian-style vaults"
+description = "A library for programmatically interacting with Obsidian-style vaults"
 license = "MIT"
 repository = "https://github.com/lukas/vaultiel"
-keywords = ["obsidian", "markdown", "notes", "cli"]
-categories = ["command-line-utilities", "text-processing"]
+keywords = ["obsidian", "markdown", "notes"]
+categories = ["text-processing"]
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
-toml = "0.8"
 glob = "0.3"
 regex = "1"
 thiserror = "1"
-dirs = "5"
 chrono = { version = "0.4", features = ["serde"] }
 unicode-normalization = "0.1"
-libc = "0.2"
 uuid = { version = "1", features = ["v4", "serde"] }
-urlencoding = "2"
 
 [dev-dependencies]
 tempfile = "3"
@@ -32,7 +27,3 @@ serde_json = "1"
 [lib]
 name = "vaultiel"
 path = "src/lib.rs"
-
-[[bin]]
-name = "vaultiel"
-path = "src/main.rs"

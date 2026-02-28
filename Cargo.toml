@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "vaultiel-rs",
     "vaultiel-node",
-    "vaultiel-py",
 ]
 
 [profile.release]

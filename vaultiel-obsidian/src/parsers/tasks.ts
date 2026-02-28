@@ -1,11 +1,10 @@
 /**
- * Task parsing for Obsidian Tasks plugin compatibility.
+ * Task parsing with generic emoji metadata extraction.
  *
  * Ported from vaultiel-rs/src/parser/task.rs
  */
 
-import type { Task, TaskLink, TaskConfig } from "../types.js";
-import { DEFAULT_TASK_CONFIG } from "../types.js";
+import type { Task, TaskLink, TaskConfig, EmojiFieldDef } from "../types.js";
 import { findCodeBlockRanges } from "./code-block.js";
 
 // Task line: optional indent, "- [symbol] ", then the rest
@@ -23,19 +22,8 @@ const TAG_REGEX = /#[a-zA-Z_][a-zA-Z0-9_/-]*/g;
 // Wikilinks in task description (simplified, for extracting task links)
 const WIKILINK_REGEX = /\[\[([^\]\|#]+)(?:#[^\]\|]*)?\|?([^\]]*)\]\]/g;
 
-/** Check if character is likely the start of an emoji used in task metadata. */
-function isEmojiStart(c: string): boolean {
-  const code = c.codePointAt(0);
-  if (code === undefined) return false;
-  return (
-    (code >= 0x1f100 && code <= 0x1f1ff) || // Enclosed Alphanumeric (🆔)
-    (code >= 0x1f300 && code <= 0x1f9ff) || // Misc Symbols, Emoticons
-    (code >= 0x2600 && code <= 0x26ff) || // Misc Symbols (⛔)
-    (code >= 0x2700 && code <= 0x27bf) || // Dingbats (➕, ❌, ✅)
-    (code >= 0x231a && code <= 0x231b) || // Watch, Hourglass
-    (code >= 0x23e9 && code <= 0x23f3) // ⏳, ⏫, ⏬, ⏲
-  );
-}
+// Number at start of string
+const NUMBER_REGEX = /^-?\d+(?:\.\d+)?/;
 
 /** Count indentation level (tabs or 4 spaces = 1 level). */
 function countIndent(s: string): number {
@@ -60,157 +48,174 @@ function extractBlockId(text: string): [string, string | undefined] {
   return [text, undefined];
 }
 
-/** Extract a date field: find emoji, extract ISO date after it, remove from string. */
-function extractDateField(
-  remaining: { value: string },
-  emoji: string,
-): string | undefined {
-  const pos = remaining.value.indexOf(emoji);
-  if (pos === -1) return undefined;
+/** Get sorted fields from config (by order ascending). */
+function sortedFields(config: TaskConfig): EmojiFieldDef[] {
+  return [...config.fields].sort((a, b) => a.order - b.order);
+}
 
-  const after = remaining.value.slice(pos + emoji.length);
+/** Get all emoji strings from config. */
+function allEmojis(config: TaskConfig): string[] {
+  return config.fields.map((f) => f.emoji);
+}
+
+/** Remove an emoji and optional surrounding whitespace from a string at a given position. */
+function removeEmoji(text: string, pos: number, emojiLen: number): string {
+  return text.slice(0, pos) + text.slice(pos + emojiLen);
+}
+
+/** Extract a date value after an emoji. Returns [value, newText] or undefined. */
+function extractDateAfter(
+  text: string,
+  pos: number,
+  emojiLen: number,
+): [string, string] | undefined {
+  const after = text.slice(pos + emojiLen);
   const trimmed = after.trimStart();
   const dateMatch = DATE_REGEX.exec(trimmed);
   if (!dateMatch) return undefined;
 
-  const value = dateMatch[0];
+  const value = dateMatch[0]!;
   const trimLen = after.length - trimmed.length;
-  remaining.value =
-    remaining.value.slice(0, pos) +
-    remaining.value.slice(pos + emoji.length + trimLen + dateMatch.index + value.length);
-  return value;
+  const newText =
+    text.slice(0, pos) +
+    text.slice(pos + emojiLen + trimLen + dateMatch.index + value.length);
+  return [value, newText];
 }
 
-/** Extract a text field: find emoji, extract text until next emoji or end. */
-function extractTextField(
-  remaining: { value: string },
-  emoji: string,
-): string | undefined {
-  const pos = remaining.value.indexOf(emoji);
-  if (pos === -1) return undefined;
+/** Extract a single word/token after an emoji. Returns [value, newText] or undefined. */
+function extractWordAfter(
+  text: string,
+  pos: number,
+  emojiLen: number,
+): [string, string] | undefined {
+  const after = text.slice(pos + emojiLen);
+  const trimmed = after.trimStart();
+  const wordMatch = /^\S+/.exec(trimmed);
+  if (!wordMatch) return undefined;
 
-  const after = remaining.value.slice(pos + emoji.length);
+  const value = wordMatch[0]!;
+  const trimLen = after.length - trimmed.length;
+  const newText =
+    text.slice(0, pos) +
+    text.slice(pos + emojiLen + trimLen + value.length);
+  return [value, newText];
+}
+
+/** Extract a number after an emoji. Returns [value, newText] or undefined. */
+function extractNumberAfter(
+  text: string,
+  pos: number,
+  emojiLen: number,
+): [string, string] | undefined {
+  const after = text.slice(pos + emojiLen);
+  const trimmed = after.trimStart();
+  const numMatch = NUMBER_REGEX.exec(trimmed);
+  if (!numMatch) return undefined;
+
+  const value = numMatch[0]!;
+  const trimLen = after.length - trimmed.length;
+  const newText =
+    text.slice(0, pos) +
+    text.slice(pos + emojiLen + trimLen + value.length);
+  return [value, newText];
+}
+
+/** Extract text until the next registered emoji. Returns [value, newText] or undefined. */
+function extractTextUntilNextEmoji(
+  text: string,
+  pos: number,
+  emojiLen: number,
+  emojis: string[],
+): [string, string] | undefined {
+  const after = text.slice(pos + emojiLen);
   const trimmed = after.trimStart();
 
-  // Find end: next emoji or end of string
+  // Find end: next registered emoji or end of string
   let valueEnd = trimmed.length;
   for (let i = 0; i < trimmed.length; ) {
-    const cp = trimmed.codePointAt(i)!;
-    const char = String.fromCodePoint(cp);
-    if (isEmojiStart(char)) {
+    const remaining = trimmed.slice(i);
+    // Check if any registered emoji starts here
+    if (emojis.some((e) => remaining.startsWith(e))) {
       valueEnd = i;
       break;
     }
-    i += char.length;
+    const cp = trimmed.codePointAt(i)!;
+    i += cp > 0xffff ? 2 : 1;
   }
 
   const value = trimmed.slice(0, valueEnd).trim();
   if (!value) return undefined;
 
   const trimLen = after.length - trimmed.length;
-  remaining.value =
-    remaining.value.slice(0, pos) +
-    remaining.value.slice(pos + emoji.length + trimLen + valueEnd);
-  return value;
-}
-
-interface TaskMetadata {
-  scheduled?: string;
-  due?: string;
-  done?: string;
-  start?: string;
-  created?: string;
-  cancelled?: string;
-  recurrence?: string;
-  onCompletion?: string;
-  id?: string;
-  dependsOn: string[];
-  priority?: string;
+  const newText =
+    text.slice(0, pos) +
+    text.slice(pos + emojiLen + trimLen + valueEnd);
+  return [value, newText];
 }
 
 /** Extract metadata from task text. Returns [description, metadata]. */
 function extractMetadata(
   text: string,
   config: TaskConfig,
-): [string, TaskMetadata] {
-  const remaining = { value: text };
-  const metadata: TaskMetadata = { dependsOn: [] };
+): [string, Record<string, string>] {
+  let remaining = text;
+  const metadata: Record<string, string> = {};
+  const emojis = allEmojis(config);
 
-  // Extract custom metadata first
-  for (const [key, emoji] of Object.entries(config.customMetadata)) {
-    const pos = remaining.value.indexOf(emoji);
+  for (const field of sortedFields(config)) {
+    const pos = remaining.indexOf(field.emoji);
     if (pos === -1) continue;
 
-    const after = remaining.value.slice(pos + emoji.length);
-    const trimmed = after.trimStart();
-    const trimLen = after.length - trimmed.length;
+    const emojiLen = field.emoji.length;
 
-    let valueEnd = trimmed.length;
-    for (let i = 0; i < trimmed.length; ) {
-      const cp = trimmed.codePointAt(i)!;
-      const char = String.fromCodePoint(cp);
-      if (isEmojiStart(char)) {
-        valueEnd = i;
+    switch (field.valueType.kind) {
+      case "date": {
+        const result = extractDateAfter(remaining, pos, emojiLen);
+        if (result) {
+          metadata[field.fieldName] = result[0];
+          remaining = result[1];
+        }
         break;
       }
-      i += char.length;
+      case "string": {
+        const result = extractWordAfter(remaining, pos, emojiLen);
+        if (result) {
+          metadata[field.fieldName] = result[0];
+          remaining = result[1];
+        }
+        break;
+      }
+      case "text": {
+        const result = extractTextUntilNextEmoji(remaining, pos, emojiLen, emojis);
+        if (result) {
+          metadata[field.fieldName] = result[0];
+          remaining = result[1];
+        }
+        break;
+      }
+      case "number": {
+        const result = extractNumberAfter(remaining, pos, emojiLen);
+        if (result) {
+          metadata[field.fieldName] = result[0];
+          remaining = result[1];
+        }
+        break;
+      }
+      case "flag": {
+        metadata[field.fieldName] = field.valueType.value;
+        remaining = removeEmoji(remaining, pos, emojiLen);
+        break;
+      }
+      case "enum": {
+        metadata[field.fieldName] = field.valueType.value;
+        remaining = removeEmoji(remaining, pos, emojiLen);
+        break;
+      }
     }
-
-    const rawValue = trimmed.slice(0, valueEnd).trim();
-    if (rawValue) {
-      // Check if it's a date
-      const dateMatch = DATE_REGEX.exec(rawValue);
-      const _value = dateMatch ? dateMatch[0] : rawValue.split(/\s/)[0];
-
-      remaining.value =
-        remaining.value.slice(0, pos) +
-        remaining.value.slice(pos + emoji.length + trimLen + valueEnd);
-    }
-  }
-
-  // Extract text-based fields
-  metadata.id = extractTextField(remaining, config.id);
-
-  const rawDeps = extractTextField(remaining, config.dependsOn);
-  if (rawDeps) {
-    metadata.dependsOn = rawDeps
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-
-  metadata.recurrence = extractTextField(remaining, config.recurrence);
-  metadata.onCompletion = extractTextField(remaining, config.onCompletion);
-
-  // Extract date fields
-  metadata.start = extractDateField(remaining, config.start);
-  metadata.created = extractDateField(remaining, config.created);
-  metadata.scheduled = extractDateField(remaining, config.scheduled);
-  metadata.due = extractDateField(remaining, config.due);
-  metadata.cancelled = extractDateField(remaining, config.cancelled);
-  metadata.done = extractDateField(remaining, config.done);
-
-  // Extract priority (check highest to lowest)
-  if (remaining.value.includes(config.priorityHighest)) {
-    metadata.priority = "highest";
-    remaining.value = remaining.value.replace(config.priorityHighest, "");
-  } else if (remaining.value.includes(config.priorityHigh)) {
-    metadata.priority = "high";
-    remaining.value = remaining.value.replace(config.priorityHigh, "");
-  } else if (remaining.value.includes(config.priorityMedium)) {
-    metadata.priority = "medium";
-    remaining.value = remaining.value.replace(config.priorityMedium, "");
-  } else if (remaining.value.includes(config.priorityLow)) {
-    metadata.priority = "low";
-    remaining.value = remaining.value.replace(config.priorityLow, "");
-  } else if (remaining.value.includes(config.priorityLowest)) {
-    metadata.priority = "lowest";
-    remaining.value = remaining.value.replace(config.priorityLowest, "");
   }
 
   // Clean up whitespace
-  const description = remaining.value.split(/\s+/).filter(Boolean).join(" ");
-
+  const description = remaining.split(/\s+/).filter(Boolean).join(" ");
   return [description, metadata];
 }
 
@@ -242,7 +247,7 @@ function extractTaskTags(description: string): string[] {
 export function parseTasks(
   content: string,
   filePath: string,
-  config: TaskConfig = DEFAULT_TASK_CONFIG,
+  config: TaskConfig,
 ): Task[] {
   const lines = content.split("\n");
   const codeRanges = findCodeBlockRanges(content);
@@ -251,7 +256,7 @@ export function parseTasks(
 
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const lineNum = lineIdx + 1;
-    const line = lines[lineIdx];
+    const line = lines[lineIdx]!;
 
     // Skip lines inside code blocks
     if (codeRanges.some((r) => lineNum >= r.startLine && lineNum <= r.endLine)) continue;
@@ -260,15 +265,15 @@ export function parseTasks(
     if (!match) {
       // Non-task line: trim parent stack
       const lineIndent = countIndent(line);
-      while (parentStack.length > 0 && parentStack[parentStack.length - 1].indent >= lineIndent) {
+      while (parentStack.length > 0 && parentStack[parentStack.length - 1]!.indent >= lineIndent) {
         parentStack.pop();
       }
       continue;
     }
 
-    const indentStr = match[1];
+    const indentStr = match[1]!;
     const symbol = `[${match[2]}]`;
-    const rest = match[3];
+    const rest = match[3]!;
     const indent = countIndent(indentStr);
 
     // Extract block ID
@@ -282,7 +287,7 @@ export function parseTasks(
     const tags = extractTaskTags(description);
 
     // Determine parent
-    while (parentStack.length > 0 && parentStack[parentStack.length - 1].indent >= indent) {
+    while (parentStack.length > 0 && parentStack[parentStack.length - 1]!.indent >= indent) {
       parentStack.pop();
     }
 
@@ -295,17 +300,7 @@ export function parseTasks(
       symbol,
       description,
       indent,
-      scheduled: metadata.scheduled,
-      due: metadata.due,
-      done: metadata.done,
-      start: metadata.start,
-      created: metadata.created,
-      cancelled: metadata.cancelled,
-      recurrence: metadata.recurrence,
-      onCompletion: metadata.onCompletion,
-      id: metadata.id,
-      dependsOn: metadata.dependsOn,
-      priority: metadata.priority,
+      metadata,
       links,
       tags,
       blockId,

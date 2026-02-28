@@ -1,332 +1,64 @@
-//! Configuration loading for Vaultiel.
+//! Task configuration for generic emoji metadata fields.
 
-use crate::error::{Result, VaultError};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
 
-/// Main configuration structure.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct Config {
-    #[serde(default)]
-    pub vault: VaultConfig,
-
-    #[serde(default)]
-    pub tasks: TasksConfig,
-
-    #[serde(default)]
-    pub cache: CacheConfig,
+/// Value type for an emoji metadata field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EmojiValueType {
+    /// ISO date (YYYY-MM-DD) after emoji.
+    Date,
+    /// Single word/token after emoji.
+    String,
+    /// Multi-word text until next registered emoji.
+    Text,
+    /// Numeric value after emoji.
+    Number,
+    /// No inline value; presence sets field_name to the predefined value.
+    Flag { value: std::string::String },
+    /// No inline value; presence sets a shared field_name to the predefined value.
+    Enum { value: std::string::String },
 }
 
-/// Vault-related configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct VaultConfig {
-    /// Default vault path.
-    pub default: Option<PathBuf>,
-}
-
-/// Task symbol configuration (Obsidian Tasks plugin compatibility).
+/// Definition of a single emoji metadata field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TasksConfig {
-    #[serde(default = "default_due_symbol")]
-    pub due: String,
-
-    #[serde(default = "default_scheduled_symbol")]
-    pub scheduled: String,
-
-    #[serde(default = "default_done_symbol")]
-    pub done: String,
-
-    #[serde(default = "default_start_symbol")]
-    pub start: String,
-
-    #[serde(default = "default_created_symbol")]
-    pub created: String,
-
-    #[serde(default = "default_cancelled_symbol")]
-    pub cancelled: String,
-
-    #[serde(default = "default_recurrence_symbol")]
-    pub recurrence: String,
-
-    #[serde(default = "default_on_completion_symbol")]
-    pub on_completion: String,
-
-    #[serde(default = "default_depends_on_symbol")]
-    pub depends_on: String,
-
-    #[serde(default = "default_id_symbol")]
-    pub id: String,
-
-    #[serde(default = "default_priority_highest_symbol")]
-    pub priority_highest: String,
-
-    #[serde(default = "default_priority_high_symbol")]
-    pub priority_high: String,
-
-    #[serde(default = "default_priority_medium_symbol")]
-    pub priority_medium: String,
-
-    #[serde(default = "default_priority_low_symbol")]
-    pub priority_low: String,
-
-    #[serde(default = "default_priority_lowest_symbol")]
-    pub priority_lowest: String,
-
-    /// Custom metadata fields with their symbols.
-    #[serde(default)]
-    pub custom_metadata: HashMap<String, String>,
+pub struct EmojiFieldDef {
+    /// The emoji character(s) used in task text.
+    pub emoji: std::string::String,
+    /// The field name this maps to in the metadata map.
+    pub field_name: std::string::String,
+    /// How to parse the value after the emoji.
+    pub value_type: EmojiValueType,
+    /// Sort order for output (lower = earlier in formatted task).
+    pub order: u32,
 }
 
-impl Default for TasksConfig {
-    fn default() -> Self {
-        Self {
-            due: default_due_symbol(),
-            scheduled: default_scheduled_symbol(),
-            done: default_done_symbol(),
-            start: default_start_symbol(),
-            created: default_created_symbol(),
-            cancelled: default_cancelled_symbol(),
-            recurrence: default_recurrence_symbol(),
-            on_completion: default_on_completion_symbol(),
-            depends_on: default_depends_on_symbol(),
-            id: default_id_symbol(),
-            priority_highest: default_priority_highest_symbol(),
-            priority_high: default_priority_high_symbol(),
-            priority_medium: default_priority_medium_symbol(),
-            priority_low: default_priority_low_symbol(),
-            priority_lowest: default_priority_lowest_symbol(),
-            custom_metadata: HashMap::new(),
-        }
-    }
-}
-
-fn default_due_symbol() -> String {
-    "📅".to_string()
-}
-fn default_scheduled_symbol() -> String {
-    "⏳".to_string()
-}
-fn default_done_symbol() -> String {
-    "✅".to_string()
-}
-fn default_start_symbol() -> String {
-    "🛫".to_string()
-}
-fn default_created_symbol() -> String {
-    "➕".to_string()
-}
-fn default_cancelled_symbol() -> String {
-    "❌".to_string()
-}
-fn default_recurrence_symbol() -> String {
-    "🔁".to_string()
-}
-fn default_on_completion_symbol() -> String {
-    "🏁".to_string()
-}
-fn default_depends_on_symbol() -> String {
-    "⛔".to_string()
-}
-fn default_id_symbol() -> String {
-    "🆔".to_string()
-}
-fn default_priority_highest_symbol() -> String {
-    "🔺".to_string()
-}
-fn default_priority_high_symbol() -> String {
-    "⏫".to_string()
-}
-fn default_priority_medium_symbol() -> String {
-    "🔼".to_string()
-}
-fn default_priority_low_symbol() -> String {
-    "🔽".to_string()
-}
-fn default_priority_lowest_symbol() -> String {
-    "⏬".to_string()
-}
-
-/// Task configuration for the parser (extracted from TasksConfig).
-#[derive(Debug, Clone)]
+/// Task configuration: defines all emoji metadata fields.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskConfig {
-    pub due: String,
-    pub scheduled: String,
-    pub done: String,
-    pub start: String,
-    pub created: String,
-    pub cancelled: String,
-    pub recurrence: String,
-    pub on_completion: String,
-    pub depends_on: String,
-    pub id: String,
-    pub priority_highest: String,
-    pub priority_high: String,
-    pub priority_medium: String,
-    pub priority_low: String,
-    pub priority_lowest: String,
-    pub custom_metadata: HashMap<String, String>,
+    /// Emoji field definitions.
+    pub fields: Vec<EmojiFieldDef>,
 }
 
-impl Default for TaskConfig {
-    fn default() -> Self {
+impl TaskConfig {
+    /// Create an empty task config with no fields.
+    pub fn empty() -> Self {
         Self {
-            due: default_due_symbol(),
-            scheduled: default_scheduled_symbol(),
-            done: default_done_symbol(),
-            start: default_start_symbol(),
-            created: default_created_symbol(),
-            cancelled: default_cancelled_symbol(),
-            recurrence: default_recurrence_symbol(),
-            on_completion: default_on_completion_symbol(),
-            depends_on: default_depends_on_symbol(),
-            id: default_id_symbol(),
-            priority_highest: default_priority_highest_symbol(),
-            priority_high: default_priority_high_symbol(),
-            priority_medium: default_priority_medium_symbol(),
-            priority_low: default_priority_low_symbol(),
-            priority_lowest: default_priority_lowest_symbol(),
-            custom_metadata: HashMap::new(),
-        }
-    }
-}
-
-impl From<&TasksConfig> for TaskConfig {
-    fn from(config: &TasksConfig) -> Self {
-        Self {
-            due: config.due.clone(),
-            scheduled: config.scheduled.clone(),
-            done: config.done.clone(),
-            start: config.start.clone(),
-            created: config.created.clone(),
-            cancelled: config.cancelled.clone(),
-            recurrence: config.recurrence.clone(),
-            on_completion: config.on_completion.clone(),
-            depends_on: config.depends_on.clone(),
-            id: config.id.clone(),
-            priority_highest: config.priority_highest.clone(),
-            priority_high: config.priority_high.clone(),
-            priority_medium: config.priority_medium.clone(),
-            priority_low: config.priority_low.clone(),
-            priority_lowest: config.priority_lowest.clone(),
-            custom_metadata: config.custom_metadata.clone(),
-        }
-    }
-}
-
-/// Cache configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheConfig {
-    #[serde(default = "default_cache_enabled")]
-    pub enabled: bool,
-
-    #[serde(default = "default_cache_location")]
-    pub location: String,
-
-    #[serde(default = "default_cache_auto_threshold")]
-    pub auto_threshold: usize,
-
-    #[serde(default)]
-    pub trust_mode: bool,
-}
-
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_cache_enabled(),
-            location: default_cache_location(),
-            auto_threshold: default_cache_auto_threshold(),
-            trust_mode: false,
-        }
-    }
-}
-
-fn default_cache_enabled() -> bool {
-    true
-}
-fn default_cache_location() -> String {
-    "global".to_string()
-}
-fn default_cache_auto_threshold() -> usize {
-    500
-}
-
-impl Config {
-    /// Load configuration from the default location (~/.config/vaultiel.toml).
-    pub fn load() -> Result<Self> {
-        let config_path = Self::default_config_path();
-
-        if config_path.exists() {
-            Self::load_from(&config_path)
-        } else {
-            Ok(Self::default())
+            fields: Vec::new(),
         }
     }
 
-    /// Load configuration from a specific path.
-    pub fn load_from(path: &Path) -> Result<Self> {
-        let content = fs::read_to_string(path).map_err(|e| {
-            VaultError::ConfigError(format!("Failed to read config file: {}", e))
-        })?;
-
-        toml::from_str(&content).map_err(|e| {
-            VaultError::ConfigError(format!("Failed to parse config file: {}", e))
-        })
+    /// Return fields sorted by order.
+    pub fn sorted_fields(&self) -> Vec<&EmojiFieldDef> {
+        let mut sorted: Vec<&EmojiFieldDef> = self.fields.iter().collect();
+        sorted.sort_by_key(|f| f.order);
+        sorted
     }
 
-    /// Returns the config file path.
-    /// Checks ~/.config/vaultiel.toml first, then falls back to OS-specific config dir.
-    pub fn default_config_path() -> PathBuf {
-        // Prefer ~/.config/vaultiel.toml (works consistently across platforms)
-        if let Some(home) = dirs::home_dir() {
-            let xdg_path = home.join(".config").join("vaultiel.toml");
-            if xdg_path.exists() {
-                return xdg_path;
-            }
-        }
-
-        // Fall back to OS-specific config dir (~/Library/Application Support on macOS)
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("vaultiel.toml")
+    /// Get all registered emoji strings (for detecting "next emoji" boundaries).
+    pub fn all_emojis(&self) -> Vec<&str> {
+        self.fields.iter().map(|f| f.emoji.as_str()).collect()
     }
-
-    /// Resolve the vault path from CLI argument or config.
-    pub fn resolve_vault_path(&self, cli_vault: Option<&Path>) -> Result<PathBuf> {
-        // Priority: CLI flag > config
-        if let Some(path) = cli_vault {
-            let path = expand_tilde(path);
-            if path.is_dir() {
-                return Ok(path);
-            } else {
-                return Err(VaultError::InvalidVaultPath(path));
-            }
-        }
-
-        if let Some(ref default) = self.vault.default {
-            let path = expand_tilde(default);
-            if path.is_dir() {
-                return Ok(path);
-            } else {
-                return Err(VaultError::VaultNotFound(path));
-            }
-        }
-
-        Err(VaultError::Other(
-            "No vault specified. Use --vault or set vault.default in ~/.config/vaultiel.toml".to_string()
-        ))
-    }
-}
-
-/// Expand `~` to the user's home directory.
-fn expand_tilde(path: &Path) -> PathBuf {
-    if let Ok(stripped) = path.strip_prefix("~") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(stripped);
-        }
-    }
-    path.to_path_buf()
 }
 
 #[cfg(test)]
@@ -334,54 +66,59 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_config() {
-        let config = Config::default();
-        assert!(config.vault.default.is_none());
-        assert_eq!(config.tasks.due, "📅");
-        assert!(config.cache.enabled);
+    fn test_empty_config() {
+        let config = TaskConfig::empty();
+        assert!(config.fields.is_empty());
+        assert!(config.sorted_fields().is_empty());
+        assert!(config.all_emojis().is_empty());
     }
 
     #[test]
-    fn test_expand_tilde() {
-        let home = dirs::home_dir().unwrap();
+    fn test_sorted_fields() {
+        let config = TaskConfig {
+            fields: vec![
+                EmojiFieldDef {
+                    emoji: "📅".to_string(),
+                    field_name: "due".to_string(),
+                    value_type: EmojiValueType::Date,
+                    order: 20,
+                },
+                EmojiFieldDef {
+                    emoji: "🆔".to_string(),
+                    field_name: "id".to_string(),
+                    value_type: EmojiValueType::String,
+                    order: 10,
+                },
+            ],
+        };
 
-        // Test ~ expansion
-        let path = PathBuf::from("~/Documents/vault");
-        let expanded = expand_tilde(&path);
-        assert_eq!(expanded, home.join("Documents/vault"));
-
-        // Test path without ~ is unchanged
-        let path = PathBuf::from("/absolute/path");
-        let expanded = expand_tilde(&path);
-        assert_eq!(expanded, PathBuf::from("/absolute/path"));
+        let sorted = config.sorted_fields();
+        assert_eq!(sorted[0].field_name, "id");
+        assert_eq!(sorted[1].field_name, "due");
     }
 
     #[test]
-    fn test_parse_config() {
-        let toml = r#"
-[vault]
-default = "/path/to/vault"
+    fn test_all_emojis() {
+        let config = TaskConfig {
+            fields: vec![
+                EmojiFieldDef {
+                    emoji: "📅".to_string(),
+                    field_name: "due".to_string(),
+                    value_type: EmojiValueType::Date,
+                    order: 1,
+                },
+                EmojiFieldDef {
+                    emoji: "⏫".to_string(),
+                    field_name: "priority".to_string(),
+                    value_type: EmojiValueType::Flag { value: "high".to_string() },
+                    order: 2,
+                },
+            ],
+        };
 
-[tasks]
-due = "📅"
-scheduled = "⏳"
-
-[tasks.custom_metadata]
-time_estimate = "⏲️"
-
-[cache]
-enabled = true
-location = "global"
-"#;
-
-        let config: Config = toml::from_str(toml).unwrap();
-        assert_eq!(
-            config.vault.default,
-            Some(PathBuf::from("/path/to/vault"))
-        );
-        assert_eq!(
-            config.tasks.custom_metadata.get("time_estimate"),
-            Some(&"⏲️".to_string())
-        );
+        let emojis = config.all_emojis();
+        assert_eq!(emojis.len(), 2);
+        assert!(emojis.contains(&"📅"));
+        assert!(emojis.contains(&"⏫"));
     }
 }

@@ -344,7 +344,7 @@ mod tests {
         )
         .unwrap();
 
-        let vault = Vault::open(vault_path).unwrap();
+        let vault = Vault::new(vault_path).unwrap();
         (temp, vault)
     }
 

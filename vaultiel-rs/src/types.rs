@@ -200,15 +200,6 @@ impl LinkContext {
     }
 }
 
-/// Output format for CLI commands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum OutputFormat {
-    #[default]
-    Json,
-    Yaml,
-    Toml,
-}
-
 /// A task found in a note.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Task {
@@ -231,53 +222,10 @@ pub struct Task {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_line: Option<usize>,
 
-    /// Scheduled date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scheduled: Option<String>,
-
-    /// Due date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub due: Option<String>,
-
-    /// Done/completed date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub done: Option<String>,
-
-    /// Start date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub start: Option<String>,
-
-    /// Created date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub created: Option<String>,
-
-    /// Cancelled date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cancelled: Option<String>,
-
-    /// Recurrence rule (e.g., "every week").
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub recurrence: Option<String>,
-
-    /// On completion action (e.g., "delete").
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub on_completion: Option<String>,
-
-    /// Task ID for dependency tracking.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-
-    /// Task IDs this task depends on.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub depends_on: Vec<String>,
-
-    /// Priority level.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub priority: Option<Priority>,
-
-    /// Custom metadata fields.
+    /// Generic metadata fields extracted from emoji markers.
+    /// Keys are field names (e.g., "due", "priority"), values are string representations.
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
-    pub custom: std::collections::HashMap<String, String>,
+    pub metadata: std::collections::HashMap<String, String>,
 
     /// Links contained in the task.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -313,44 +261,6 @@ pub struct TaskLink {
     pub alias: Option<String>,
 }
 
-/// Task priority level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Priority {
-    Highest,
-    High,
-    Medium,
-    Low,
-    Lowest,
-}
-
-impl std::fmt::Display for Priority {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Priority::Highest => write!(f, "highest"),
-            Priority::High => write!(f, "high"),
-            Priority::Medium => write!(f, "medium"),
-            Priority::Low => write!(f, "low"),
-            Priority::Lowest => write!(f, "lowest"),
-        }
-    }
-}
-
-impl std::str::FromStr for Priority {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "highest" => Ok(Priority::Highest),
-            "high" => Ok(Priority::High),
-            "medium" => Ok(Priority::Medium),
-            "low" => Ok(Priority::Low),
-            "lowest" => Ok(Priority::Lowest),
-            _ => Err(format!("Invalid priority: {}", s)),
-        }
-    }
-}
-
 /// A hierarchical task with children.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HierarchicalTask {
@@ -377,53 +287,9 @@ pub struct HierarchicalTask {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<HierarchicalTask>,
 
-    /// Scheduled date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scheduled: Option<String>,
-
-    /// Due date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub due: Option<String>,
-
-    /// Done/completed date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub done: Option<String>,
-
-    /// Start date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub start: Option<String>,
-
-    /// Created date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub created: Option<String>,
-
-    /// Cancelled date.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cancelled: Option<String>,
-
-    /// Recurrence rule.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub recurrence: Option<String>,
-
-    /// On completion action.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub on_completion: Option<String>,
-
-    /// Task ID for dependency tracking.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-
-    /// Task IDs this task depends on.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub depends_on: Vec<String>,
-
-    /// Priority level.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub priority: Option<Priority>,
-
-    /// Custom metadata fields.
+    /// Generic metadata fields.
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
-    pub custom: std::collections::HashMap<String, String>,
+    pub metadata: std::collections::HashMap<String, String>,
 
     /// Links contained in the task.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -448,18 +314,7 @@ impl From<Task> for HierarchicalTask {
             indent: task.indent,
             parent_line: task.parent_line,
             children: Vec::new(),
-            scheduled: task.scheduled,
-            due: task.due,
-            done: task.done,
-            start: task.start,
-            created: task.created,
-            cancelled: task.cancelled,
-            recurrence: task.recurrence,
-            on_completion: task.on_completion,
-            id: task.id,
-            depends_on: task.depends_on,
-            priority: task.priority,
-            custom: task.custom,
+            metadata: task.metadata,
             links: task.links,
             tags: task.tags,
             block_id: task.block_id,

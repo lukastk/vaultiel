@@ -24,7 +24,6 @@ import type {
   LinkRef,
   InlineAttr,
 } from "./types.js";
-import { DEFAULT_TASK_CONFIG } from "./types.js";
 import { parseLinks } from "./parsers/links.js";
 import { parseTags } from "./parsers/tags.js";
 import { parseHeadings, slugify } from "./parsers/headings.js";
@@ -59,7 +58,7 @@ export class Vault {
   private app: App;
   private taskConfig: TaskConfig;
 
-  constructor(app: App, taskConfig: TaskConfig = DEFAULT_TASK_CONFIG) {
+  constructor(app: App, taskConfig: TaskConfig) {
     this.app = app;
     this.taskConfig = taskConfig;
   }

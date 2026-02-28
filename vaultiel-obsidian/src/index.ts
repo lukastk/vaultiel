@@ -26,9 +26,9 @@ export type {
   LinkRef,
   InlineAttr,
   TaskConfig,
+  EmojiFieldDef,
+  EmojiValueType,
 } from "./types.js";
-
-export { DEFAULT_TASK_CONFIG } from "./types.js";
 
 // Standalone parse functions (work on raw markdown strings, no vault context)
 export { parseLinks } from "./parsers/links.js";

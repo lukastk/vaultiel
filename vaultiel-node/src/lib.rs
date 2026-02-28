@@ -7,9 +7,10 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-use vaultiel::config::Config;
+use vaultiel::config::{EmojiFieldDef, EmojiValueType, TaskConfig};
 use vaultiel::graph::LinkGraph;
 use vaultiel::metadata::{find_by_id, get_metadata, init_metadata};
 use vaultiel::parser::{parse_all_links, parse_block_ids, parse_headings, parse_tags, parse_tasks};
@@ -80,17 +81,7 @@ pub struct JsTask {
     pub symbol: String,
     pub description: String,
     pub indent: u32,
-    pub scheduled: Option<String>,
-    pub due: Option<String>,
-    pub done: Option<String>,
-    pub start: Option<String>,
-    pub created: Option<String>,
-    pub cancelled: Option<String>,
-    pub recurrence: Option<String>,
-    pub on_completion: Option<String>,
-    pub id: Option<String>,
-    pub depends_on: Vec<String>,
-    pub priority: Option<String>,
+    pub metadata: HashMap<String, String>,
     pub links: Vec<JsTaskLink>,
     pub tags: Vec<String>,
     pub block_id: Option<String>,
@@ -116,23 +107,77 @@ pub struct JsLinkRef {
 }
 
 // ============================================================================
+// Task Config JS types
+// ============================================================================
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsEmojiFieldDef {
+    pub emoji: String,
+    pub field_name: String,
+    /// One of: "date", "string", "text", "number", "flag", "enum"
+    pub value_type: String,
+    /// For "flag" and "enum" types, the predefined value
+    pub value: Option<String>,
+    pub order: u32,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsTaskConfig {
+    pub fields: Vec<JsEmojiFieldDef>,
+}
+
+/// Convert JS task config to Rust TaskConfig
+fn js_config_to_rust(js_config: &JsTaskConfig) -> TaskConfig {
+    TaskConfig {
+        fields: js_config
+            .fields
+            .iter()
+            .map(|f| EmojiFieldDef {
+                emoji: f.emoji.clone(),
+                field_name: f.field_name.clone(),
+                value_type: match f.value_type.as_str() {
+                    "date" => EmojiValueType::Date,
+                    "string" => EmojiValueType::String,
+                    "text" => EmojiValueType::Text,
+                    "number" => EmojiValueType::Number,
+                    "flag" => EmojiValueType::Flag {
+                        value: f.value.clone().unwrap_or_default(),
+                    },
+                    "enum" => EmojiValueType::Enum {
+                        value: f.value.clone().unwrap_or_default(),
+                    },
+                    _ => EmojiValueType::String,
+                },
+                order: f.order,
+            })
+            .collect(),
+    }
+}
+
+// ============================================================================
 // Vault Class
 // ============================================================================
 
 #[napi]
 pub struct JsVault {
     vault: Vault,
+    task_config: TaskConfig,
 }
 
 #[napi]
 impl JsVault {
     /// Open a vault at the specified path.
     #[napi(constructor)]
-    pub fn new(path: String) -> Result<Self> {
-        let config = Config::default();
-        let vault = Vault::new(PathBuf::from(path), config)
+    pub fn new(path: String, task_config: Option<JsTaskConfig>) -> Result<Self> {
+        let vault = Vault::new(PathBuf::from(path))
             .map_err(|e| Error::from_reason(e.to_string()))?;
-        Ok(Self { vault })
+        let task_config = task_config
+            .as_ref()
+            .map(js_config_to_rust)
+            .unwrap_or_else(TaskConfig::empty);
+        Ok(Self { vault, task_config })
     }
 
     /// Get the vault root path.
@@ -322,8 +367,7 @@ impl JsVault {
         let note = self.vault.load_note(&note_path)
             .map_err(|e| Error::from_reason(e.to_string()))?;
 
-        let task_config = vaultiel::config::TaskConfig::default();
-        let tasks = parse_tasks(&note.content, &note_path, &task_config);
+        let tasks = parse_tasks(&note.content, &note_path, &self.task_config);
 
         let filtered: Vec<_> = if let Some(ref target) = links_to {
             let target_normalized = target.trim_end_matches(".md").to_lowercase();
@@ -345,17 +389,7 @@ impl JsVault {
                 symbol: t.symbol,
                 description: t.description,
                 indent: t.indent as u32,
-                scheduled: t.scheduled,
-                due: t.due,
-                done: t.done,
-                start: t.start,
-                created: t.created,
-                cancelled: t.cancelled,
-                recurrence: t.recurrence,
-                on_completion: t.on_completion,
-                id: t.id,
-                depends_on: t.depends_on,
-                priority: t.priority.map(|p| format!("{:?}", p).to_lowercase()),
+                metadata: t.metadata,
                 links: t.links.into_iter().map(|l| JsTaskLink {
                     to: l.to,
                     alias: l.alias,
@@ -467,8 +501,7 @@ impl JsVault {
             _ => None,
         };
 
-        let task_config = vaultiel::config::TaskConfig::default();
-        let tasks = parse_tasks(&note.content, &note_path, &task_config);
+        let tasks = parse_tasks(&note.content, &note_path, &self.task_config);
         let links = note.links();
         let tags = note.tags();
         let headings = parse_headings(&note.content);

@@ -1,9 +1,9 @@
-//! Task parsing for Obsidian Tasks plugin compatibility.
+//! Task parsing with generic emoji metadata fields.
 
-use crate::config::TaskConfig;
+use crate::config::{EmojiValueType, TaskConfig};
 use crate::parser::code_block::find_code_block_ranges;
 use crate::parser::wikilink::parse_links;
-use crate::types::{Priority, Task, TaskLink, TaskLocation};
+use crate::types::{Task, TaskLink, TaskLocation};
 use regex::Regex;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,6 +28,11 @@ static BLOCK_ID_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 /// Regex for tags in task description.
 static TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"#[a-zA-Z_][a-zA-Z0-9_/-]*").unwrap()
+});
+
+/// Regex for numbers (integer or decimal).
+static NUMBER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"-?\d+(?:\.\d+)?").unwrap()
 });
 
 /// Parse all tasks from content.
@@ -112,18 +117,7 @@ fn parse_task_line(
         description,
         indent,
         parent_line: None, // Set later by parse_tasks
-        scheduled: metadata.scheduled,
-        due: metadata.due,
-        done: metadata.done,
-        start: metadata.start,
-        created: metadata.created,
-        cancelled: metadata.cancelled,
-        recurrence: metadata.recurrence,
-        on_completion: metadata.on_completion,
-        id: metadata.id,
-        depends_on: metadata.depends_on,
-        priority: metadata.priority,
-        custom: metadata.custom,
+        metadata,
         links,
         tags,
         block_id,
@@ -157,176 +151,151 @@ fn extract_block_id(text: &str) -> (String, Option<String>) {
     }
 }
 
-/// Extracted task metadata.
-struct TaskMetadata {
-    scheduled: Option<String>,
-    due: Option<String>,
-    done: Option<String>,
-    start: Option<String>,
-    created: Option<String>,
-    cancelled: Option<String>,
-    recurrence: Option<String>,
-    on_completion: Option<String>,
-    id: Option<String>,
-    depends_on: Vec<String>,
-    priority: Option<Priority>,
-    custom: HashMap<String, String>,
+/// Remove an emoji and its associated value text from the remaining string.
+fn remove_range(remaining: &mut String, start: usize, end: usize) {
+    *remaining = format!("{}{}", &remaining[..start], &remaining[end..]);
 }
 
-/// Extract a date field: find emoji, extract ISO date after it, remove from string.
-fn extract_date_field(remaining: &mut String, emoji: &str) -> Option<String> {
+/// Extract a date value after an emoji position.
+fn extract_date_after(remaining: &mut String, emoji: &str) -> Option<String> {
     if let Some(pos) = remaining.find(emoji) {
         let after = &remaining[pos + emoji.len()..];
         if let Some(date_match) = DATE_REGEX.find(after.trim_start()) {
             let value = date_match.as_str().to_string();
             let trim_start = after.len() - after.trim_start().len();
-            *remaining = format!(
-                "{}{}",
-                &remaining[..pos],
-                &remaining[pos + emoji.len() + trim_start + date_match.end()..]
-            );
+            let end = pos + emoji.len() + trim_start + date_match.end();
+            remove_range(remaining, pos, end);
             return Some(value);
         }
     }
     None
 }
 
-/// Extract a text field: find emoji, extract text until next emoji, remove from string.
-fn extract_text_field(remaining: &mut String, emoji: &str) -> Option<String> {
+/// Extract a single word/token after an emoji.
+fn extract_word_after(remaining: &mut String, emoji: &str) -> Option<String> {
     if let Some(pos) = remaining.find(emoji) {
         let after = &remaining[pos + emoji.len()..];
-        let after_trimmed = after.trim_start();
-        // Find the next emoji (start of another field)
-        let value_end = after_trimmed
-            .find(|c: char| is_emoji_start(c))
-            .unwrap_or(after_trimmed.len());
-        let value = after_trimmed[..value_end].trim().to_string();
+        let trimmed = after.trim_start();
+        let trim_start = after.len() - trimmed.len();
+        // Find end of word (whitespace or emoji)
+        let word_end = trimmed
+            .find(|c: char| c.is_whitespace())
+            .unwrap_or(trimmed.len());
+        let value = trimmed[..word_end].trim().to_string();
         if !value.is_empty() {
-            let trim_start = after.len() - after_trimmed.len();
-            *remaining = format!(
-                "{}{}",
-                &remaining[..pos],
-                &remaining[pos + emoji.len() + trim_start + value_end..]
-            );
+            let end = pos + emoji.len() + trim_start + word_end;
+            remove_range(remaining, pos, end);
             return Some(value);
         }
     }
     None
 }
 
-/// Extract metadata (dates, priority, custom) from task text.
-fn extract_metadata(text: &str, config: &TaskConfig) -> (String, TaskMetadata) {
-    let mut remaining = text.to_string();
-    let mut metadata = TaskMetadata {
-        scheduled: None,
-        due: None,
-        done: None,
-        start: None,
-        created: None,
-        cancelled: None,
-        recurrence: None,
-        on_completion: None,
-        id: None,
-        depends_on: Vec::new(),
-        priority: None,
-        custom: HashMap::new(),
-    };
+/// Extract multi-word text until next registered emoji or end of string.
+fn extract_text_until_next_emoji(remaining: &mut String, emoji: &str, all_emojis: &[&str]) -> Option<String> {
+    if let Some(pos) = remaining.find(emoji) {
+        let after_emoji_start = pos + emoji.len();
+        let after = &remaining[after_emoji_start..];
+        let trimmed = after.trim_start();
+        let trim_start = after.len() - trimmed.len();
 
-    // Extract custom metadata first (they appear before standard metadata)
-    for (key, emoji) in &config.custom_metadata {
-        if let Some(pos) = remaining.find(emoji) {
-            // Find the value after the emoji — scope to text before next emoji
-            let after_emoji = &remaining[pos + emoji.len()..];
-            let trimmed = after_emoji.trim_start();
-            let trim_start = after_emoji.len() - trimmed.len();
+        // Find the next registered emoji
+        let value_end = find_next_emoji_pos_in_slice(trimmed, all_emojis).unwrap_or(trimmed.len());
+        let value = trimmed[..value_end].trim().to_string();
+        if !value.is_empty() {
+            let end = after_emoji_start + trim_start + value_end;
+            remove_range(remaining, pos, end);
+            return Some(value);
+        }
+    }
+    None
+}
 
-            // Find end of immediate value (up to next emoji or whitespace-then-emoji)
-            let value_end = trimmed
-                .find(|c: char| is_emoji_start(c))
-                .unwrap_or(trimmed.len());
-            let immediate_value = trimmed[..value_end].trim();
-
-            if !immediate_value.is_empty() {
-                // Check if it's a date within the scoped value
-                let value = if let Some(date_match) = DATE_REGEX.find(immediate_value) {
-                    date_match.as_str().to_string()
-                } else {
-                    // Extract first word/token (e.g., "2h", "30m", "1")
-                    let word_end = immediate_value
-                        .find(|c: char| c.is_whitespace())
-                        .unwrap_or(immediate_value.len());
-                    immediate_value[..word_end].to_string()
-                };
-                metadata.custom.insert(key.clone(), value.clone());
-                // Remove the emoji and its value from remaining
-                let consume_len = trim_start + value_end;
-                remaining = format!(
-                    "{}{}",
-                    &remaining[..pos],
-                    &remaining[pos + emoji.len() + consume_len..]
-                );
+/// Find the position of the next registered emoji in a slice.
+fn find_next_emoji_pos_in_slice(text: &str, emojis: &[&str]) -> Option<usize> {
+    let mut earliest: Option<usize> = None;
+    for emoji in emojis {
+        if let Some(pos) = text.find(emoji) {
+            if earliest.is_none() || pos < earliest.unwrap() {
+                earliest = Some(pos);
             }
         }
     }
+    earliest
+}
 
-    // Extract text-based fields (before date fields, since they consume until next emoji)
-    // ID: single word/value
-    metadata.id = extract_text_field(&mut remaining, &config.id);
-
-    // Depends on: comma-separated IDs
-    if let Some(raw) = extract_text_field(&mut remaining, &config.depends_on) {
-        metadata.depends_on = raw.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+/// Extract a number after an emoji.
+fn extract_number_after(remaining: &mut String, emoji: &str) -> Option<String> {
+    if let Some(pos) = remaining.find(emoji) {
+        let after = &remaining[pos + emoji.len()..];
+        if let Some(num_match) = NUMBER_REGEX.find(after.trim_start()) {
+            let value = num_match.as_str().to_string();
+            let trim_start = after.len() - after.trim_start().len();
+            let end = pos + emoji.len() + trim_start + num_match.end();
+            remove_range(remaining, pos, end);
+            return Some(value);
+        }
     }
+    None
+}
 
-    // Recurrence: multi-word text (e.g., "every 2 weeks")
-    metadata.recurrence = extract_text_field(&mut remaining, &config.recurrence);
+/// Remove just the emoji (for flag/enum types with no inline value).
+fn remove_emoji(remaining: &mut String, emoji: &str) -> bool {
+    if let Some(pos) = remaining.find(emoji) {
+        let end = pos + emoji.len();
+        remove_range(remaining, pos, end);
+        true
+    } else {
+        false
+    }
+}
 
-    // On completion: single word (e.g., "delete")
-    metadata.on_completion = extract_text_field(&mut remaining, &config.on_completion);
+/// Extract metadata generically from task text using config field definitions.
+fn extract_metadata(text: &str, config: &TaskConfig) -> (String, HashMap<String, String>) {
+    let mut remaining = text.to_string();
+    let mut metadata = HashMap::new();
+    let all_emojis = config.all_emojis();
 
-    // Extract date fields
-    metadata.start = extract_date_field(&mut remaining, &config.start);
-    metadata.created = extract_date_field(&mut remaining, &config.created);
-    metadata.scheduled = extract_date_field(&mut remaining, &config.scheduled);
-    metadata.due = extract_date_field(&mut remaining, &config.due);
-    metadata.cancelled = extract_date_field(&mut remaining, &config.cancelled);
-    metadata.done = extract_date_field(&mut remaining, &config.done);
-
-    // Extract priority (check from highest to lowest)
-    if remaining.contains(&config.priority_highest) {
-        metadata.priority = Some(Priority::Highest);
-        remaining = remaining.replace(&config.priority_highest, "");
-    } else if remaining.contains(&config.priority_high) {
-        metadata.priority = Some(Priority::High);
-        remaining = remaining.replace(&config.priority_high, "");
-    } else if remaining.contains(&config.priority_medium) {
-        metadata.priority = Some(Priority::Medium);
-        remaining = remaining.replace(&config.priority_medium, "");
-    } else if remaining.contains(&config.priority_low) {
-        metadata.priority = Some(Priority::Low);
-        remaining = remaining.replace(&config.priority_low, "");
-    } else if remaining.contains(&config.priority_lowest) {
-        metadata.priority = Some(Priority::Lowest);
-        remaining = remaining.replace(&config.priority_lowest, "");
+    // Process fields in order
+    for field in config.sorted_fields() {
+        match &field.value_type {
+            EmojiValueType::Date => {
+                if let Some(value) = extract_date_after(&mut remaining, &field.emoji) {
+                    metadata.insert(field.field_name.clone(), value);
+                }
+            }
+            EmojiValueType::String => {
+                if let Some(value) = extract_word_after(&mut remaining, &field.emoji) {
+                    metadata.insert(field.field_name.clone(), value);
+                }
+            }
+            EmojiValueType::Text => {
+                if let Some(value) = extract_text_until_next_emoji(&mut remaining, &field.emoji, &all_emojis) {
+                    metadata.insert(field.field_name.clone(), value);
+                }
+            }
+            EmojiValueType::Number => {
+                if let Some(value) = extract_number_after(&mut remaining, &field.emoji) {
+                    metadata.insert(field.field_name.clone(), value);
+                }
+            }
+            EmojiValueType::Flag { value } => {
+                if remove_emoji(&mut remaining, &field.emoji) {
+                    metadata.insert(field.field_name.clone(), value.clone());
+                }
+            }
+            EmojiValueType::Enum { value } => {
+                if remove_emoji(&mut remaining, &field.emoji) {
+                    metadata.insert(field.field_name.clone(), value.clone());
+                }
+            }
+        }
     }
 
     // Clean up extra whitespace
     let description = remaining.split_whitespace().collect::<Vec<_>>().join(" ");
 
     (description, metadata)
-}
-
-/// Check if character is likely the start of an emoji.
-fn is_emoji_start(c: char) -> bool {
-    // Common emoji ranges used in Obsidian Tasks
-    matches!(c,
-        '\u{1F100}'..='\u{1F1FF}' | // Enclosed Alphanumeric Supplement (🆔 U+1F194)
-        '\u{1F300}'..='\u{1F9FF}' | // Misc Symbols, Emoticons, etc.
-        '\u{2600}'..='\u{26FF}' |   // Misc Symbols (⛔ U+26D4)
-        '\u{2700}'..='\u{27BF}' |   // Dingbats (➕ U+2795, ❌ U+274C, ✅ U+2705)
-        '\u{231A}'..='\u{231B}' |   // Watch, Hourglass
-        '\u{23E9}'..='\u{23F3}'     // Various symbols (⏳ U+23F3, ⏫ U+23EB, ⏬ U+23EC, ⏲ U+23F2)
-    )
 }
 
 /// Extract links from task description.
@@ -441,109 +410,40 @@ fn add_child_to_tree(
 pub struct FormatTaskParams<'a> {
     pub description: &'a str,
     pub symbol: &'a str,
-    pub scheduled: Option<&'a str>,
-    pub due: Option<&'a str>,
-    pub done: Option<&'a str>,
-    pub start: Option<&'a str>,
-    pub created: Option<&'a str>,
-    pub cancelled: Option<&'a str>,
-    pub recurrence: Option<&'a str>,
-    pub on_completion: Option<&'a str>,
-    pub id: Option<&'a str>,
-    pub depends_on: &'a [String],
-    pub priority: Option<Priority>,
-    pub custom: &'a HashMap<String, String>,
+    pub metadata: &'a HashMap<String, String>,
 }
 
 impl<'a> Default for FormatTaskParams<'a> {
     fn default() -> Self {
-        // Use a leaked empty HashMap for the default — this is a static empty reference
         static EMPTY_MAP: std::sync::LazyLock<HashMap<String, String>> =
             std::sync::LazyLock::new(HashMap::new);
         Self {
             description: "",
             symbol: "[ ]",
-            scheduled: None,
-            due: None,
-            done: None,
-            start: None,
-            created: None,
-            cancelled: None,
-            recurrence: None,
-            on_completion: None,
-            id: None,
-            depends_on: &[],
-            priority: None,
-            custom: &EMPTY_MAP,
+            metadata: &EMPTY_MAP,
         }
     }
 }
 
 /// Format a task string for Obsidian.
 ///
-/// Uses Obsidian Tasks canonical order:
-/// description → custom metadata → id → depends_on → priority → recurrence →
-/// on_completion → created → start → scheduled → due → cancelled → done
+/// Iterates sorted fields and emits present metadata in order.
 pub fn format_task(params: &FormatTaskParams, config: &TaskConfig) -> String {
     let mut parts = vec![format!("- {} {}", params.symbol, params.description)];
 
-    // Custom metadata (before recognized fields so Obsidian Tasks can parse from end)
-    for (key, value) in params.custom {
-        if let Some(emoji) = config.custom_metadata.get(key) {
-            parts.push(format!("{} {}", emoji, value));
+    for field in config.sorted_fields() {
+        if let Some(value) = params.metadata.get(&field.field_name) {
+            match &field.value_type {
+                EmojiValueType::Flag { .. } | EmojiValueType::Enum { .. } => {
+                    // Flag/enum: just emit the emoji, no value after it
+                    parts.push(field.emoji.clone());
+                }
+                _ => {
+                    // Date/String/Text/Number: emit emoji + value
+                    parts.push(format!("{} {}", field.emoji, value));
+                }
+            }
         }
-    }
-
-    // Obsidian Tasks canonical field order
-    if let Some(id) = params.id {
-        parts.push(format!("{} {}", config.id, id));
-    }
-
-    if !params.depends_on.is_empty() {
-        parts.push(format!("{} {}", config.depends_on, params.depends_on.join(",")));
-    }
-
-    if let Some(p) = params.priority {
-        let emoji = match p {
-            Priority::Highest => &config.priority_highest,
-            Priority::High => &config.priority_high,
-            Priority::Medium => &config.priority_medium,
-            Priority::Low => &config.priority_low,
-            Priority::Lowest => &config.priority_lowest,
-        };
-        parts.push(emoji.to_string());
-    }
-
-    if let Some(recurrence) = params.recurrence {
-        parts.push(format!("{} {}", config.recurrence, recurrence));
-    }
-
-    if let Some(on_completion) = params.on_completion {
-        parts.push(format!("{} {}", config.on_completion, on_completion));
-    }
-
-    if let Some(date) = params.created {
-        parts.push(format!("{} {}", config.created, date));
-    }
-
-    if let Some(date) = params.start {
-        parts.push(format!("{} {}", config.start, date));
-    }
-
-    if let Some(date) = params.scheduled {
-        parts.push(format!("{} {}", config.scheduled, date));
-    }
-
-    if let Some(date) = params.due {
-        parts.push(format!("{} {}", config.due, date));
-    }
-
-    if let Some(date) = params.cancelled {
-        parts.push(format!("{} {}", config.cancelled, date));
-    }
-
-    if let Some(date) = params.done {
-        parts.push(format!("{} {}", config.done, date));
     }
 
     parts.join(" ")
@@ -598,28 +498,49 @@ pub fn parse_relative_date(date_str: &str, today: chrono::NaiveDate) -> Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::EmojiFieldDef;
 
-    fn default_config() -> TaskConfig {
-        TaskConfig::default()
+    /// Build a config matching the old Obsidian Tasks defaults for testing.
+    fn obsidian_tasks_config() -> TaskConfig {
+        TaskConfig {
+            fields: vec![
+                EmojiFieldDef { emoji: "🆔".to_string(), field_name: "id".to_string(), value_type: EmojiValueType::String, order: 10 },
+                EmojiFieldDef { emoji: "⛔".to_string(), field_name: "depends_on".to_string(), value_type: EmojiValueType::Text, order: 20 },
+                EmojiFieldDef { emoji: "🔺".to_string(), field_name: "priority".to_string(), value_type: EmojiValueType::Flag { value: "highest".to_string() }, order: 30 },
+                EmojiFieldDef { emoji: "⏫".to_string(), field_name: "priority".to_string(), value_type: EmojiValueType::Enum { value: "high".to_string() }, order: 31 },
+                EmojiFieldDef { emoji: "🔼".to_string(), field_name: "priority".to_string(), value_type: EmojiValueType::Enum { value: "medium".to_string() }, order: 32 },
+                EmojiFieldDef { emoji: "🔽".to_string(), field_name: "priority".to_string(), value_type: EmojiValueType::Enum { value: "low".to_string() }, order: 33 },
+                EmojiFieldDef { emoji: "⏬".to_string(), field_name: "priority".to_string(), value_type: EmojiValueType::Enum { value: "lowest".to_string() }, order: 34 },
+                EmojiFieldDef { emoji: "🔁".to_string(), field_name: "recurrence".to_string(), value_type: EmojiValueType::Text, order: 40 },
+                EmojiFieldDef { emoji: "🏁".to_string(), field_name: "on_completion".to_string(), value_type: EmojiValueType::Text, order: 50 },
+                EmojiFieldDef { emoji: "➕".to_string(), field_name: "created".to_string(), value_type: EmojiValueType::Date, order: 60 },
+                EmojiFieldDef { emoji: "🛫".to_string(), field_name: "start".to_string(), value_type: EmojiValueType::Date, order: 70 },
+                EmojiFieldDef { emoji: "⏳".to_string(), field_name: "scheduled".to_string(), value_type: EmojiValueType::Date, order: 80 },
+                EmojiFieldDef { emoji: "📅".to_string(), field_name: "due".to_string(), value_type: EmojiValueType::Date, order: 90 },
+                EmojiFieldDef { emoji: "❌".to_string(), field_name: "cancelled".to_string(), value_type: EmojiValueType::Date, order: 100 },
+                EmojiFieldDef { emoji: "✅".to_string(), field_name: "done".to_string(), value_type: EmojiValueType::Date, order: 110 },
+            ],
+        }
     }
 
     #[test]
     fn test_parse_simple_task() {
         let content = "- [ ] A simple task";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].symbol, "[ ]");
         assert_eq!(tasks[0].description, "A simple task");
         assert_eq!(tasks[0].indent, 0);
+        assert!(tasks[0].metadata.is_empty());
     }
 
     #[test]
     fn test_parse_completed_task() {
         let content = "- [x] Completed task";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].symbol, "[x]");
@@ -629,28 +550,28 @@ mod tests {
     fn test_parse_task_with_dates() {
         let content = "- [ ] Task with dates ⏳ 2026-02-05 📅 2026-02-10";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].scheduled, Some("2026-02-05".to_string()));
-        assert_eq!(tasks[0].due, Some("2026-02-10".to_string()));
+        assert_eq!(tasks[0].metadata.get("scheduled"), Some(&"2026-02-05".to_string()));
+        assert_eq!(tasks[0].metadata.get("due"), Some(&"2026-02-10".to_string()));
     }
 
     #[test]
     fn test_parse_task_with_priority() {
         let content = "- [ ] High priority task ⏫";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].priority, Some(Priority::High));
+        assert_eq!(tasks[0].metadata.get("priority"), Some(&"high".to_string()));
     }
 
     #[test]
     fn test_parse_task_with_links() {
         let content = "- [ ] Task linking to [[Note A]] and [[Note B|alias]]";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].links.len(), 2);
@@ -663,7 +584,7 @@ mod tests {
     fn test_parse_task_with_tags() {
         let content = "- [ ] Task with #tag1 and #project/subtag";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].tags, vec!["#tag1", "#project/subtag"]);
@@ -673,7 +594,7 @@ mod tests {
     fn test_parse_task_with_block_id() {
         let content = "- [ ] Task with block ID ^abc123";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].block_id, Some("abc123".to_string()));
@@ -683,7 +604,7 @@ mod tests {
     fn test_parse_nested_tasks() {
         let content = "- [ ] Parent task\n\t- [ ] Child task\n\t\t- [ ] Grandchild task";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 3);
         assert_eq!(tasks[0].indent, 0);
@@ -706,19 +627,17 @@ mod tests {
 
     #[test]
     fn test_format_task() {
-        let config = default_config();
-        let empty_custom = HashMap::new();
-        let empty_deps: Vec<String> = vec![];
+        let config = obsidian_tasks_config();
+        let mut metadata = HashMap::new();
+        metadata.insert("scheduled".to_string(), "2026-02-05".to_string());
+        metadata.insert("due".to_string(), "2026-02-10".to_string());
+        metadata.insert("priority".to_string(), "high".to_string());
+
         let result = format_task(
             &FormatTaskParams {
                 description: "My task",
                 symbol: "[ ]",
-                scheduled: Some("2026-02-05"),
-                due: Some("2026-02-10"),
-                priority: Some(Priority::High),
-                custom: &empty_custom,
-                depends_on: &empty_deps,
-                ..Default::default()
+                metadata: &metadata,
             },
             &config,
         );
@@ -726,116 +645,76 @@ mod tests {
         assert!(result.contains("- [ ] My task"));
         assert!(result.contains("⏳ 2026-02-05"));
         assert!(result.contains("📅 2026-02-10"));
+        // Priority "high" matches ⏫ enum field
         assert!(result.contains("⏫"));
-    }
-
-    #[test]
-    fn test_parse_task_with_start_date() {
-        let content = "- [ ] Task with start 🛫 2026-03-01";
-        let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
-
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].start, Some("2026-03-01".to_string()));
-    }
-
-    #[test]
-    fn test_parse_task_with_created_date() {
-        let content = "- [ ] Task ➕ 2026-02-20";
-        let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
-
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].created, Some("2026-02-20".to_string()));
-    }
-
-    #[test]
-    fn test_parse_task_with_cancelled_date() {
-        let content = "- [-] Cancelled task ❌ 2026-02-25";
-        let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
-
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].cancelled, Some("2026-02-25".to_string()));
     }
 
     #[test]
     fn test_parse_task_with_recurrence() {
         let content = "- [ ] Recurring task 🔁 every week 📅 2026-03-01";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].recurrence, Some("every week".to_string()));
-        assert_eq!(tasks[0].due, Some("2026-03-01".to_string()));
+        assert_eq!(tasks[0].metadata.get("recurrence"), Some(&"every week".to_string()));
+        assert_eq!(tasks[0].metadata.get("due"), Some(&"2026-03-01".to_string()));
     }
 
     #[test]
     fn test_parse_task_with_id_and_depends() {
         let content = "- [ ] Task 🆔 abc123 ⛔ def456,ghi789 📅 2026-03-01";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].id, Some("abc123".to_string()));
-        assert_eq!(tasks[0].depends_on, vec!["def456", "ghi789"]);
-        assert_eq!(tasks[0].due, Some("2026-03-01".to_string()));
-    }
-
-    #[test]
-    fn test_parse_task_with_on_completion() {
-        let content = "- [ ] Task 🏁 delete 📅 2026-03-01";
-        let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
-
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].on_completion, Some("delete".to_string()));
-        assert_eq!(tasks[0].due, Some("2026-03-01".to_string()));
+        assert_eq!(tasks[0].metadata.get("id"), Some(&"abc123".to_string()));
+        assert_eq!(tasks[0].metadata.get("depends_on"), Some(&"def456,ghi789".to_string()));
+        assert_eq!(tasks[0].metadata.get("due"), Some(&"2026-03-01".to_string()));
     }
 
     #[test]
     fn test_parse_task_all_fields() {
         let content = "- [ ] Full task 🆔 myid ⛔ dep1 ⏫ 🔁 every day 🏁 delete ➕ 2026-01-01 🛫 2026-02-01 ⏳ 2026-02-15 📅 2026-03-01 ❌ 2026-02-20 ✅ 2026-02-25";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(content, &path, &default_config());
+        let tasks = parse_tasks(content, &path, &obsidian_tasks_config());
 
         assert_eq!(tasks.len(), 1);
         let task = &tasks[0];
         assert_eq!(task.description, "Full task");
-        assert_eq!(task.id, Some("myid".to_string()));
-        assert_eq!(task.depends_on, vec!["dep1"]);
-        assert_eq!(task.priority, Some(Priority::High));
-        assert_eq!(task.recurrence, Some("every day".to_string()));
-        assert_eq!(task.on_completion, Some("delete".to_string()));
-        assert_eq!(task.created, Some("2026-01-01".to_string()));
-        assert_eq!(task.start, Some("2026-02-01".to_string()));
-        assert_eq!(task.scheduled, Some("2026-02-15".to_string()));
-        assert_eq!(task.due, Some("2026-03-01".to_string()));
-        assert_eq!(task.cancelled, Some("2026-02-20".to_string()));
-        assert_eq!(task.done, Some("2026-02-25".to_string()));
+        assert_eq!(task.metadata.get("id"), Some(&"myid".to_string()));
+        assert_eq!(task.metadata.get("depends_on"), Some(&"dep1".to_string()));
+        assert_eq!(task.metadata.get("priority"), Some(&"high".to_string()));
+        assert_eq!(task.metadata.get("recurrence"), Some(&"every day".to_string()));
+        assert_eq!(task.metadata.get("on_completion"), Some(&"delete".to_string()));
+        assert_eq!(task.metadata.get("created"), Some(&"2026-01-01".to_string()));
+        assert_eq!(task.metadata.get("start"), Some(&"2026-02-01".to_string()));
+        assert_eq!(task.metadata.get("scheduled"), Some(&"2026-02-15".to_string()));
+        assert_eq!(task.metadata.get("due"), Some(&"2026-03-01".to_string()));
+        assert_eq!(task.metadata.get("cancelled"), Some(&"2026-02-20".to_string()));
+        assert_eq!(task.metadata.get("done"), Some(&"2026-02-25".to_string()));
     }
 
     #[test]
     fn test_format_task_canonical_order() {
-        let config = default_config();
-        let empty_custom = HashMap::new();
-        let deps = vec!["dep1".to_string()];
+        let config = obsidian_tasks_config();
+        let mut metadata = HashMap::new();
+        metadata.insert("id".to_string(), "myid".to_string());
+        metadata.insert("depends_on".to_string(), "dep1".to_string());
+        metadata.insert("priority".to_string(), "high".to_string());
+        metadata.insert("recurrence".to_string(), "every week".to_string());
+        metadata.insert("on_completion".to_string(), "delete".to_string());
+        metadata.insert("created".to_string(), "2026-01-01".to_string());
+        metadata.insert("start".to_string(), "2026-02-01".to_string());
+        metadata.insert("scheduled".to_string(), "2026-02-15".to_string());
+        metadata.insert("due".to_string(), "2026-03-01".to_string());
+        metadata.insert("cancelled".to_string(), "2026-02-20".to_string());
+        metadata.insert("done".to_string(), "2026-02-25".to_string());
+
         let result = format_task(
             &FormatTaskParams {
                 description: "Task",
                 symbol: "[ ]",
-                id: Some("myid"),
-                depends_on: &deps,
-                priority: Some(Priority::High),
-                recurrence: Some("every week"),
-                on_completion: Some("delete"),
-                created: Some("2026-01-01"),
-                start: Some("2026-02-01"),
-                scheduled: Some("2026-02-15"),
-                due: Some("2026-03-01"),
-                cancelled: Some("2026-02-20"),
-                done: Some("2026-02-25"),
-                custom: &empty_custom,
+                metadata: &metadata,
             },
             &config,
         );
@@ -866,43 +745,16 @@ mod tests {
     }
 
     #[test]
-    fn test_format_task_round_trip() {
-        let config = default_config();
-        let empty_custom = HashMap::new();
-        let deps = vec!["dep1".to_string()];
-        let formatted = format_task(
-            &FormatTaskParams {
-                description: "Round trip task",
-                symbol: "[ ]",
-                id: Some("myid"),
-                depends_on: &deps,
-                priority: Some(Priority::High),
-                recurrence: Some("every week"),
-                created: Some("2026-01-01"),
-                start: Some("2026-02-01"),
-                scheduled: Some("2026-02-15"),
-                due: Some("2026-03-01"),
-                custom: &empty_custom,
-                ..Default::default()
-            },
-            &config,
-        );
-
-        // Parse it back
+    fn test_empty_config_parses_simple_task() {
+        let content = "- [ ] Simple task with 📅 2026-01-01";
         let path = PathBuf::from("test.md");
-        let tasks = parse_tasks(&formatted, &path, &config);
+        let config = TaskConfig::empty();
+        let tasks = parse_tasks(content, &path, &config);
 
         assert_eq!(tasks.len(), 1);
-        let task = &tasks[0];
-        assert_eq!(task.description, "Round trip task");
-        assert_eq!(task.id, Some("myid".to_string()));
-        assert_eq!(task.depends_on, vec!["dep1"]);
-        assert_eq!(task.priority, Some(Priority::High));
-        assert_eq!(task.recurrence, Some("every week".to_string()));
-        assert_eq!(task.created, Some("2026-01-01".to_string()));
-        assert_eq!(task.start, Some("2026-02-01".to_string()));
-        assert_eq!(task.scheduled, Some("2026-02-15".to_string()));
-        assert_eq!(task.due, Some("2026-03-01".to_string()));
+        // With no fields registered, emoji stays in description
+        assert!(tasks[0].description.contains("📅"));
+        assert!(tasks[0].metadata.is_empty());
     }
 
     #[test]
@@ -944,18 +796,7 @@ mod tests {
                 description: "Parent".to_string(),
                 indent: 0,
                 parent_line: None,
-                scheduled: None,
-                due: None,
-                done: None,
-                start: None,
-                created: None,
-                cancelled: None,
-                recurrence: None,
-                on_completion: None,
-                id: None,
-                depends_on: vec![],
-                priority: None,
-                custom: HashMap::new(),
+                metadata: HashMap::new(),
                 links: vec![],
                 tags: vec![],
                 block_id: None,
@@ -970,18 +811,7 @@ mod tests {
                 description: "Child".to_string(),
                 indent: 1,
                 parent_line: Some(1),
-                scheduled: None,
-                due: None,
-                done: None,
-                start: None,
-                created: None,
-                cancelled: None,
-                recurrence: None,
-                on_completion: None,
-                id: None,
-                depends_on: vec![],
-                priority: None,
-                custom: HashMap::new(),
+                metadata: HashMap::new(),
                 links: vec![],
                 tags: vec![],
                 block_id: None,

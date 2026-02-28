@@ -52,17 +52,7 @@ export interface Task {
   symbol: string;
   description: string;
   indent: number;
-  scheduled?: string;
-  due?: string;
-  done?: string;
-  start?: string;
-  created?: string;
-  cancelled?: string;
-  recurrence?: string;
-  onCompletion?: string;
-  id?: string;
-  dependsOn: string[];
-  priority?: string;
+  metadata: Record<string, string>;
   links: TaskLink[];
   tags: string[];
   blockId?: string;
@@ -92,42 +82,24 @@ export interface InlineAttr {
   line: number;
 }
 
-/** Task emoji configuration. */
-export interface TaskConfig {
-  due: string;
-  scheduled: string;
-  done: string;
-  start: string;
-  created: string;
-  cancelled: string;
-  recurrence: string;
-  onCompletion: string;
-  dependsOn: string;
-  id: string;
-  priorityHighest: string;
-  priorityHigh: string;
-  priorityMedium: string;
-  priorityLow: string;
-  priorityLowest: string;
-  customMetadata: Record<string, string>;
+/** Value type for an emoji metadata field. */
+export type EmojiValueType =
+  | { kind: "date" }
+  | { kind: "string" }
+  | { kind: "text" }
+  | { kind: "number" }
+  | { kind: "flag"; value: string }
+  | { kind: "enum"; value: string };
+
+/** Definition of an emoji metadata field for tasks. */
+export interface EmojiFieldDef {
+  emoji: string;
+  fieldName: string;
+  valueType: EmojiValueType;
+  order: number;
 }
 
-/** Default task configuration matching Obsidian Tasks plugin. */
-export const DEFAULT_TASK_CONFIG: TaskConfig = {
-  due: "\u{1F4C5}",           // 📅
-  scheduled: "\u{23F3}",       // ⏳
-  done: "\u{2705}",            // ✅
-  start: "\u{1F6EB}",          // 🛫
-  created: "\u{2795}",         // ➕
-  cancelled: "\u{274C}",       // ❌
-  recurrence: "\u{1F501}",     // 🔁
-  onCompletion: "\u{1F3C1}",   // 🏁
-  dependsOn: "\u{26D4}",       // ⛔
-  id: "\u{1F194}",             // 🆔
-  priorityHighest: "\u{1F53A}", // 🔺
-  priorityHigh: "\u{23EB}",    // ⏫
-  priorityMedium: "\u{1F53C}", // 🔼
-  priorityLow: "\u{1F53D}",   // 🔽
-  priorityLowest: "\u{23EC}",  // ⏬
-  customMetadata: {},
-};
+/** Task emoji configuration. */
+export interface TaskConfig {
+  fields: EmojiFieldDef[];
+}

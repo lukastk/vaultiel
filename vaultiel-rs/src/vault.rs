@@ -1,6 +1,5 @@
 //! Vault representation and operations.
 
-use crate::config::Config;
 use crate::error::{Result, VaultError};
 use crate::note::{Note, NoteInfo};
 use glob::glob;
@@ -11,34 +10,18 @@ use std::path::{Path, PathBuf};
 pub struct Vault {
     /// Root path of the vault.
     pub root: PathBuf,
-
-    /// Configuration.
-    pub config: Config,
 }
 
 impl Vault {
     /// Create a new vault instance.
-    pub fn new(root: impl Into<PathBuf>, config: Config) -> Result<Self> {
+    pub fn new(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
 
         if !root.is_dir() {
             return Err(VaultError::VaultNotFound(root));
         }
 
-        Ok(Self { root, config })
-    }
-
-    /// Open the default vault from config.
-    pub fn open_default() -> Result<Self> {
-        let config = Config::load()?;
-        let root = config.resolve_vault_path(None)?;
-        Self::new(root, config)
-    }
-
-    /// Open a vault at the specified path.
-    pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let config = Config::load()?;
-        Self::new(path, config)
+        Ok(Self { root })
     }
 
     /// Get the full path to a note.
@@ -258,8 +241,7 @@ mod tests {
 
     fn setup_test_vault() -> (TempDir, Vault) {
         let dir = TempDir::new().unwrap();
-        let config = Config::default();
-        let vault = Vault::new(dir.path(), config).unwrap();
+        let vault = Vault::new(dir.path()).unwrap();
         (dir, vault)
     }
 

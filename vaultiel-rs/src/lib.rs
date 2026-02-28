@@ -9,7 +9,6 @@
 //! - Tag extraction and filtering
 //! - Block reference support
 //! - Task extraction and formatting
-//! - Search (subsequence matching like Obsidian, plus other algorithms)
 //!
 //! # Example
 //!
@@ -18,7 +17,7 @@
 //! use vaultiel::{Vault, Note};
 //!
 //! // Open a vault
-//! let vault = Vault::open("/path/to/vault").unwrap();
+//! let vault = Vault::new("/path/to/vault").unwrap();
 //!
 //! // List all notes
 //! for path in vault.list_notes().unwrap() {
@@ -31,13 +30,9 @@
 //! println!("Tags: {:?}", note.tags());
 //! ```
 
-pub mod cache;
-pub mod cli;
 pub mod config;
 pub mod error;
-pub mod export;
 pub mod graph;
-pub mod health;
 pub mod metadata;
 pub mod note;
 pub mod parser;
@@ -45,7 +40,7 @@ pub mod types;
 pub mod vault;
 
 // Re-export main types at crate root
-pub use config::Config;
+pub use config::TaskConfig;
 pub use error::{Result, VaultError};
 pub use note::Note;
 pub use types::*;
