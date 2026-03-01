@@ -109,8 +109,8 @@ export interface LinkRef {
   embed: boolean;
 }
 
-/** An inline attribute ([key::value]). */
-export interface InlineAttr {
+/** An inline property ([key::value]). */
+export interface InlineProperty {
   key: string;
   value: string;
   line: number;

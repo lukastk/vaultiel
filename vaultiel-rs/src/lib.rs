@@ -4,7 +4,7 @@
 //!
 //! Vaultiel provides a programmatic interface to Obsidian vaults, enabling:
 //! - Note creation, modification, and renaming (with automatic link propagation)
-//! - Frontmatter manipulation (YAML + inline attributes)
+//! - Frontmatter manipulation (YAML + inline properties)
 //! - Link graph traversal (with rich context metadata)
 //! - Tag extraction and filtering
 //! - Block reference support

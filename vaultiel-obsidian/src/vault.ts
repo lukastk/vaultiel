@@ -23,13 +23,13 @@ import type {
   TaskConfig,
   VaultielMetadata,
   LinkRef,
-  InlineAttr,
+  InlineProperty,
 } from "./types.js";
 import { parseLinks } from "./parsers/links.js";
 import { parseTags } from "./parsers/tags.js";
 import { parseHeadings, slugify } from "./parsers/headings.js";
 import { parseBlockIds } from "./parsers/block-ids.js";
-import { parseInlineAttrs } from "./parsers/inline-attrs.js";
+import { parseInlineProperties } from "./parsers/inline-properties.js";
 import { parseTasks, parseTaskTrees } from "./parsers/tasks.js";
 
 declare const crypto: { randomUUID(): string };
@@ -330,7 +330,7 @@ export class Vault {
 
     const fmStr = this.getFrontmatter(path);
     const frontmatter = fmStr ? JSON.parse(fmStr) : null;
-    const inlineAttrs = parseInlineAttrs(content);
+    const inlineProperties = parseInlineProperties(content);
     const headings = this.getHeadings(path);
     const tasks = parseTasks(content, file.path, this.taskConfig);
     const links = this.getLinks(path);
@@ -341,7 +341,7 @@ export class Vault {
       path: file.path,
       name: file.basename,
       frontmatter,
-      inline_attrs: inlineAttrs,
+      inline_properties: inlineProperties,
       headings,
       tasks,
       links: { outgoing: links },

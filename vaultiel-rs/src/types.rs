@@ -146,16 +146,16 @@ pub struct Heading {
     pub slug: String,
 }
 
-/// An inline attribute found in a note.
+/// An inline property found in a note.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InlineAttr {
-    /// The attribute key.
+pub struct InlineProperty {
+    /// The property key.
     pub key: String,
 
-    /// The attribute value.
+    /// The property value.
     pub value: String,
 
-    /// Line number where this attribute appears (1-indexed).
+    /// Line number where this property appears (1-indexed).
     pub line: usize,
 
     /// Start column in the line (0-indexed).

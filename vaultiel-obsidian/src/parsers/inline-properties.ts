@@ -1,25 +1,25 @@
 /**
- * Inline attribute parsing ([key::value]).
+ * Inline property parsing ([key::value]).
  *
- * Ported from vaultiel-rs/src/parser/inline_attr.rs
+ * Ported from vaultiel-rs/src/parser/inline_property.rs
  */
 
-import type { InlineAttr } from "../types.js";
+import type { InlineProperty } from "../types.js";
 import { findCodeBlockRanges, isInCodeBlock } from "./code-block.js";
 
-// Inline attribute: [key::value]
+// Inline property: [key::value]
 // Key: word chars and hyphens
 // Value: allows ]] inside (for wikilinks like [[Note]])
-const INLINE_ATTR = /\[([\w-]+)::([^\]]*(?:\]\][^\]]*)*)\]/g;
+const INLINE_PROPERTY = /\[([\w-]+)::([^\]]*(?:\]\][^\]]*)*)\]/g;
 
-/** Parse all inline attributes from content. */
-export function parseInlineAttrs(content: string): InlineAttr[] {
+/** Parse all inline properties from content. */
+export function parseInlineProperties(content: string): InlineProperty[] {
   const codeRanges = findCodeBlockRanges(content);
-  const attrs: InlineAttr[] = [];
+  const props: InlineProperty[] = [];
 
-  INLINE_ATTR.lastIndex = 0;
+  INLINE_PROPERTY.lastIndex = 0;
   let cap: RegExpExecArray | null;
-  while ((cap = INLINE_ATTR.exec(content)) !== null) {
+  while ((cap = INLINE_PROPERTY.exec(content)) !== null) {
     const start = cap.index;
 
     // Skip if inside code block
@@ -34,8 +34,8 @@ export function parseInlineAttrs(content: string): InlineAttr[] {
       if (content[i] === "\n") line++;
     }
 
-    attrs.push({ key, value, line });
+    props.push({ key, value, line });
   }
 
-  return attrs;
+  return props;
 }

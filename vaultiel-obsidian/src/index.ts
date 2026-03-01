@@ -27,7 +27,7 @@ export type {
   TaskChild,
   VaultielMetadata,
   LinkRef,
-  InlineAttr,
+  InlineProperty,
   TaskConfig,
   EmojiFieldDef,
   EmojiValueType,
@@ -38,7 +38,7 @@ export { parseLinks } from "./parsers/links.js";
 export { parseTags } from "./parsers/tags.js";
 export { parseHeadings, slugify } from "./parsers/headings.js";
 export { parseBlockIds } from "./parsers/block-ids.js";
-export { parseInlineAttrs } from "./parsers/inline-attrs.js";
+export { parseInlineProperties } from "./parsers/inline-properties.js";
 export { parseTasks, parseTaskTrees, formatTaskTree } from "./parsers/tasks.js";
 
 // Obsidian Tasks plugin helpers (not part of VaultAdapter)
