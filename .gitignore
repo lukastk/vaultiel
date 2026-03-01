@@ -7,3 +7,4 @@ vaultiel-node/index.js
 vaultiel-node/index.d.ts
 vaultiel-node/*.node
 vaultiel-obsidian/dist/
+vaultiel-cli/dist/
