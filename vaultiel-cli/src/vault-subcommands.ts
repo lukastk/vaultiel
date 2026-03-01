@@ -26,6 +26,52 @@ export const vaultSubcommands: CLISubcommand[] = [
   },
 
   {
+    name: "validate",
+    description: "Validate frontmatter parsing",
+    group: "Read",
+    args: [
+      { name: "note", description: "Note path (optional — validates all if omitted)", required: false },
+    ],
+    options: [
+      {
+        name: "pattern",
+        flag: "--pattern",
+        description: "Glob pattern to filter notes",
+        type: "string",
+      },
+    ],
+    execute(vault, args) {
+      const note = args["note"] as string | undefined;
+      const pattern = args["pattern"] as string | undefined;
+
+      let paths: string[];
+      if (note) {
+        paths = [note];
+      } else if (pattern) {
+        paths = vault.listNotesMatching(pattern);
+      } else {
+        paths = vault.listNotes();
+      }
+
+      const errors: string[] = [];
+      for (const path of paths) {
+        try {
+          vault.getFrontmatter(path);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          errors.push(`${path}: ${msg}`);
+        }
+      }
+
+      if (errors.length === 0) {
+        return { text: `All ${paths.length} notes valid`, exitCode: 0 };
+      }
+
+      return { text: errors.join("\n"), exitCode: 1 };
+    },
+  },
+
+  {
     name: "exists",
     description: "Check if a note exists",
     group: "Read",
