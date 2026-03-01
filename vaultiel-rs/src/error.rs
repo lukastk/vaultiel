@@ -61,6 +61,9 @@ pub enum VaultError {
     #[error("No content provided")]
     NoContentProvided,
 
+    #[error("Search error: {0}")]
+    SearchError(String),
+
     #[error("{0}")]
     Other(String),
 }

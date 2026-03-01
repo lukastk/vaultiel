@@ -290,6 +290,58 @@ export const vaultSubcommands: CLISubcommand[] = [
     },
   },
 
+  {
+    name: "search",
+    description: "Search notes by query",
+    group: "Read",
+    args: [
+      { name: "query", description: "Search query string", required: true },
+    ],
+    options: [
+      {
+        name: "json",
+        flag: "--json",
+        description: "Output full match details as JSON",
+        type: "boolean",
+        default: false,
+      },
+      {
+        name: "limit",
+        flag: "--limit",
+        description: "Maximum number of results",
+        type: "number",
+      },
+    ],
+    execute(vault, args) {
+      const query = args["query"] as string;
+      const jsonOutput = args["json"] as boolean;
+      const limit = args["limit"] as number | undefined;
+
+      let results = vault.search(query);
+
+      if (limit !== undefined && limit > 0) {
+        results = results.slice(0, limit);
+      }
+
+      if (results.length === 0) {
+        return { text: "No matches found", exitCode: 1 };
+      }
+
+      if (jsonOutput) {
+        return { data: results, exitCode: 0 };
+      }
+
+      // Default: one path per line with match summary
+      const lines: string[] = [];
+      for (const result of results) {
+        const matchCount = result.matches.length;
+        const fields = [...new Set(result.matches.map((m: { field: string }) => m.field))];
+        lines.push(`${result.path}  (${matchCount} match${matchCount !== 1 ? "es" : ""}: ${fields.join(", ")})`);
+      }
+      return { text: lines.join("\n"), exitCode: 0 };
+    },
+  },
+
   // ── Parse ─────────────────────────────────────────────────
 
   {

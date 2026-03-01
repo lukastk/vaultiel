@@ -2,6 +2,7 @@
 
 use crate::error::{Result, VaultError};
 use crate::note::{Note, NoteInfo};
+use crate::search::{evaluate_note, parse_query, SearchQuery, SearchResult};
 use glob::glob;
 use std::path::{Path, PathBuf};
 
@@ -174,6 +175,37 @@ impl Vault {
     /// Get note info for a path.
     pub fn note_info(&self, relative_path: &Path) -> Result<NoteInfo> {
         NoteInfo::from_path(&self.root, relative_path)
+    }
+
+    /// Search the vault with a query string.
+    pub fn search_query_string(&self, query_str: &str) -> Result<Vec<SearchResult>> {
+        let query = parse_query(query_str)?;
+        self.search(&query)
+    }
+
+    /// Search the vault with a pre-parsed query.
+    pub fn search(&self, query: &SearchQuery) -> Result<Vec<SearchResult>> {
+        let note_paths = self.list_notes()?;
+        let mut results = Vec::new();
+
+        for path in note_paths {
+            let note = match self.load_note(&path) {
+                Ok(note) => note,
+                Err(_) => continue, // skip unreadable notes
+            };
+
+            let matches = evaluate_note(&note, query);
+            if !matches.is_empty() {
+                results.push(SearchResult {
+                    path,
+                    matches,
+                });
+            }
+        }
+
+        // Sort by path for consistent ordering
+        results.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(results)
     }
 
     /// Resolve a note name to a path.

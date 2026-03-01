@@ -40,6 +40,16 @@ export { parseHeadings, slugify } from "./parsers/headings.js";
 export { parseBlockIds } from "./parsers/block-ids.js";
 export { parseInlineProperties } from "./parsers/inline-properties.js";
 export { parseTasks, parseTaskTrees, formatTaskTree } from "./parsers/tasks.js";
+export {
+  parseSearchQuery,
+  evaluateNote as evaluateSearchNote,
+  type SearchQuery,
+  type SearchMatch,
+  type SearchResult,
+  type FieldPredicate,
+  type StringMatcher,
+  type PropertyOp,
+} from "./parsers/search.js";
 
 // Obsidian Tasks plugin helpers (not part of VaultAdapter)
 export {

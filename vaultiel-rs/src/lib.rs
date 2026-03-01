@@ -36,6 +36,7 @@ pub mod graph;
 pub mod metadata;
 pub mod note;
 pub mod parser;
+pub mod search;
 pub mod types;
 pub mod vault;
 
@@ -43,5 +44,6 @@ pub mod vault;
 pub use config::TaskConfig;
 pub use error::{Result, VaultError};
 pub use note::Note;
+pub use search::{SearchMatch, SearchQuery, SearchResult};
 pub use types::*;
 pub use vault::Vault;

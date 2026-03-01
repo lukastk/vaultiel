@@ -31,6 +31,8 @@ import { parseHeadings, slugify } from "./parsers/headings.js";
 import { parseBlockIds } from "./parsers/block-ids.js";
 import { parseInlineProperties } from "./parsers/inline-properties.js";
 import { parseTasks, parseTaskTrees } from "./parsers/tasks.js";
+import { parseSearchQuery, evaluateNote as evaluateSearchNote } from "./parsers/search.js";
+import type { SearchResult } from "./parsers/search.js";
 
 declare const crypto: { randomUUID(): string };
 
@@ -514,6 +516,29 @@ export class Vault {
     }
 
     return null;
+  }
+
+  /** Search notes by query string. */
+  async search(queryStr: string): Promise<SearchResult[]> {
+    const query = parseSearchQuery(queryStr);
+    return this.searchStructured(query);
+  }
+
+  /** Search notes by a pre-built SearchQuery AST (skips parsing). */
+  async searchStructured(query: import("./parsers/search.js").SearchQuery): Promise<SearchResult[]> {
+    const files = this.app.vault.getMarkdownFiles();
+    const results: SearchResult[] = [];
+
+    for (const file of files) {
+      const content = await this.app.vault.cachedRead(file);
+      const matches = evaluateSearchNote(file.path, content, query);
+      if (matches.length > 0) {
+        results.push({ path: file.path, matches });
+      }
+    }
+
+    results.sort((a, b) => a.path.localeCompare(b.path));
+    return results;
   }
 }
 

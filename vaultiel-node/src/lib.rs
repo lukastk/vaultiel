@@ -118,6 +118,21 @@ pub struct JsInlineProperty {
     pub end_col: u32,
 }
 
+#[napi(object)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsSearchMatch {
+    pub field: String,
+    pub line: Option<u32>,
+    pub text: Option<String>,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsSearchResult {
+    pub path: String,
+    pub matches: Vec<JsSearchMatch>,
+}
+
 // ============================================================================
 // Task Config JS types
 // ============================================================================
@@ -814,6 +829,51 @@ impl JsVault {
             .map_err(|e| Error::from_reason(e.to_string()))?;
 
         Ok(result.map(|p| p.to_string_lossy().to_string()))
+    }
+
+    // ========================================================================
+    // Search
+    // ========================================================================
+
+    /// Search notes by query string.
+    #[napi]
+    pub fn search(&self, query: String) -> Result<Vec<JsSearchResult>> {
+        let results = self.vault.search_query_string(&query)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        Ok(results
+            .into_iter()
+            .map(|r| JsSearchResult {
+                path: r.path.to_string_lossy().to_string(),
+                matches: r.matches.into_iter().map(|m| JsSearchMatch {
+                    field: m.field,
+                    line: m.line.map(|l| l as u32),
+                    text: m.text,
+                }).collect(),
+            })
+            .collect())
+    }
+
+    /// Search notes with a JSON-serialized SearchQuery (for programmatic use).
+    #[napi]
+    pub fn search_structured(&self, query_json: String) -> Result<Vec<JsSearchResult>> {
+        let query: vaultiel::SearchQuery = serde_json::from_str(&query_json)
+            .map_err(|e| Error::from_reason(format!("Invalid search query JSON: {}", e)))?;
+
+        let results = self.vault.search(&query)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        Ok(results
+            .into_iter()
+            .map(|r| JsSearchResult {
+                path: r.path.to_string_lossy().to_string(),
+                matches: r.matches.into_iter().map(|m| JsSearchMatch {
+                    field: m.field,
+                    line: m.line.map(|l| l as u32),
+                    text: m.text,
+                }).collect(),
+            })
+            .collect())
     }
 }
 
