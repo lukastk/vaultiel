@@ -133,6 +133,24 @@ pub struct JsSearchResult {
     pub matches: Vec<JsSearchMatch>,
 }
 
+/// Scope for property-agnostic operations.
+#[napi(string_enum)]
+pub enum JsPropertyScope {
+    Auto,
+    Frontmatter,
+    Inline,
+    Both,
+}
+
+fn js_scope_to_rust(scope: Option<JsPropertyScope>, index: Option<u32>) -> vaultiel::PropertyScope {
+    match scope {
+        None | Some(JsPropertyScope::Auto) => vaultiel::PropertyScope::Auto,
+        Some(JsPropertyScope::Frontmatter) => vaultiel::PropertyScope::Frontmatter,
+        Some(JsPropertyScope::Inline) => vaultiel::PropertyScope::Inline { index: index.map(|i| i as usize) },
+        Some(JsPropertyScope::Both) => vaultiel::PropertyScope::Both,
+    }
+}
+
 // ============================================================================
 // Task Config JS types
 // ============================================================================
@@ -692,6 +710,85 @@ impl JsVault {
         let note = self.vault.load_note(&note_path)
             .map_err(|e| Error::from_reason(e.to_string()))?;
         let updated = note.rename_frontmatter_key(&old_key, &new_key)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    // ========================================================================
+    // Property-Agnostic Operations
+    // ========================================================================
+
+    /// Get merged properties (frontmatter + inline) as a JSON string.
+    #[napi]
+    pub fn get_properties(&self, path: String) -> Result<String> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let props = note.get_properties()
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        serde_json::to_string(&props)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Get a single property by key as a JSON string, or null if not found.
+    #[napi]
+    pub fn get_property(&self, path: String, key: String) -> Result<Option<String>> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let value = note.get_property(&key)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        match value {
+            Some(v) => {
+                let json = serde_json::to_string(&v)
+                    .map_err(|e| Error::from_reason(e.to_string()))?;
+                Ok(Some(json))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Set a property with scope control.
+    #[napi]
+    pub fn set_property(&self, path: String, key: String, value: String, scope: Option<JsPropertyScope>, index: Option<u32>) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(&value)
+            .unwrap_or(serde_yaml::Value::String(value));
+
+        let rust_scope = js_scope_to_rust(scope, index);
+        let updated = note.set_property(&key, &yaml_value, &rust_scope)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Remove a property with scope control.
+    #[napi]
+    pub fn remove_property(&self, path: String, key: String, scope: Option<JsPropertyScope>, index: Option<u32>) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        let rust_scope = js_scope_to_rust(scope, index);
+        let updated = note.remove_property(&key, &rust_scope)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Rename a property key with scope control.
+    #[napi]
+    pub fn rename_property(&self, path: String, old_key: String, new_key: String, scope: Option<JsPropertyScope>) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        let rust_scope = js_scope_to_rust(scope, None);
+        let updated = note.rename_property(&old_key, &new_key, &rust_scope)
             .map_err(|e| Error::from_reason(e.to_string()))?;
         updated.save(&self.vault.root)
             .map_err(|e| Error::from_reason(e.to_string()))

@@ -5,7 +5,7 @@ use crate::parser::{
     self, parse_block_ids, parse_headings, parse_inline_properties, parse_all_links, parse_tags,
     split_frontmatter,
 };
-use crate::types::{BlockId, Heading, InlineProperty, Link, Tag};
+use crate::types::{BlockId, Heading, InlineProperty, Link, PropertyScope, Tag};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 use std::path::{Path, PathBuf};
@@ -393,6 +393,183 @@ impl Note {
                 }
             }
             _ => Ok(self.clone()),
+        }
+    }
+
+    // ========================================================================
+    // Property-agnostic operations
+    // ========================================================================
+
+    /// Get merged properties (frontmatter + inline).
+    ///
+    /// Frontmatter entries take precedence. For inline properties, keys already
+    /// present in frontmatter are skipped; multiple inline values with the same
+    /// key are collected into a `Sequence`.
+    pub fn get_properties(&self) -> Result<std::collections::HashMap<String, YamlValue>> {
+        let mut merged = std::collections::HashMap::new();
+
+        // Start with frontmatter
+        if let Some(YamlValue::Mapping(map)) = self.frontmatter()? {
+            for (k, v) in map {
+                if let YamlValue::String(key) = k {
+                    merged.insert(key, v);
+                }
+            }
+        }
+
+        // Add inline properties (skip keys already in frontmatter)
+        let inline = self.inline_properties();
+        let mut inline_groups: std::collections::HashMap<String, Vec<YamlValue>> = std::collections::HashMap::new();
+        for prop in &inline {
+            inline_groups.entry(prop.key.clone()).or_default().push(
+                YamlValue::String(prop.value.clone())
+            );
+        }
+
+        for (key, values) in inline_groups {
+            if !merged.contains_key(&key) {
+                if values.len() == 1 {
+                    merged.insert(key, values.into_iter().next().unwrap());
+                } else {
+                    merged.insert(key, YamlValue::Sequence(values));
+                }
+            }
+        }
+
+        Ok(merged)
+    }
+
+    /// Get a single property by key. Frontmatter checked first, then inline.
+    pub fn get_property(&self, key: &str) -> Result<Option<YamlValue>> {
+        // Check frontmatter first
+        if let Some(YamlValue::Mapping(map)) = self.frontmatter()? {
+            let yaml_key = YamlValue::String(key.to_string());
+            if let Some(value) = map.get(&yaml_key) {
+                return Ok(Some(value.clone()));
+            }
+        }
+
+        // Check inline properties
+        let inline = self.inline_properties();
+        let matching: Vec<_> = inline.iter().filter(|p| p.key == key).collect();
+        match matching.len() {
+            0 => Ok(None),
+            1 => Ok(Some(YamlValue::String(matching[0].value.clone()))),
+            _ => {
+                let values: Vec<YamlValue> = matching.iter()
+                    .map(|p| YamlValue::String(p.value.clone()))
+                    .collect();
+                Ok(Some(YamlValue::Sequence(values)))
+            }
+        }
+    }
+
+    /// Set a property with scope control.
+    ///
+    /// - `Auto`: detect where key lives; error if ambiguous; default to frontmatter if new.
+    /// - `Both`: error (ambiguous intent for set).
+    /// - `Frontmatter` / `Inline`: direct delegation.
+    pub fn set_property(&self, key: &str, value: &YamlValue, scope: &PropertyScope) -> Result<Self> {
+        match scope {
+            PropertyScope::Frontmatter => {
+                let mut fm = self.frontmatter()?
+                    .unwrap_or(YamlValue::Mapping(serde_yaml::Mapping::new()));
+                if let YamlValue::Mapping(ref mut map) = fm {
+                    map.insert(YamlValue::String(key.to_string()), value.clone());
+                }
+                self.with_frontmatter(&fm)
+            }
+            PropertyScope::Inline { index } => {
+                let str_value = match value {
+                    YamlValue::String(s) => s.clone(),
+                    other => serde_yaml::to_string(other)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string(),
+                };
+                self.set_inline_property(key, &str_value, *index)
+            }
+            PropertyScope::Auto => {
+                let fm = self.frontmatter()?;
+                let in_fm = match &fm {
+                    Some(YamlValue::Mapping(map)) => map.contains_key(&YamlValue::String(key.to_string())),
+                    _ => false,
+                };
+                let inline = self.inline_properties();
+                let in_inline = inline.iter().any(|p| p.key == key);
+
+                if in_fm && in_inline {
+                    return Err(crate::error::VaultError::Other(
+                        format!("Property {:?} exists in both frontmatter and inline — specify a scope", key)
+                    ));
+                }
+
+                if in_fm {
+                    self.set_property(key, value, &PropertyScope::Frontmatter)
+                } else if in_inline {
+                    self.set_property(key, value, &PropertyScope::Inline { index: None })
+                } else {
+                    // New key — default to frontmatter
+                    self.set_property(key, value, &PropertyScope::Frontmatter)
+                }
+            }
+            PropertyScope::Both => {
+                Err(crate::error::VaultError::Other(
+                    "Cannot use Both scope for set_property (ambiguous intent)".to_string()
+                ))
+            }
+        }
+    }
+
+    /// Remove a property.
+    ///
+    /// - `Auto` / `Both`: remove from all locations.
+    /// - `Frontmatter` / `Inline`: remove from specified scope only.
+    pub fn remove_property(&self, key: &str, scope: &PropertyScope) -> Result<Self> {
+        match scope {
+            PropertyScope::Frontmatter => {
+                self.remove_frontmatter_key(key)
+            }
+            PropertyScope::Inline { index } => {
+                self.remove_inline_property(Some(key), *index)
+            }
+            PropertyScope::Auto | PropertyScope::Both => {
+                // Remove from frontmatter
+                let mut result = self.remove_frontmatter_key(key)?;
+
+                // Remove all inline properties with this key (in reverse order)
+                let props = result.inline_properties();
+                let matching_indices: Vec<usize> = props.iter()
+                    .enumerate()
+                    .filter(|(_, p)| p.key == key)
+                    .map(|(i, _)| i)
+                    .collect();
+
+                for idx in matching_indices.into_iter().rev() {
+                    result = result.remove_inline_property(None, Some(idx))?;
+                }
+
+                Ok(result)
+            }
+        }
+    }
+
+    /// Rename a property key.
+    ///
+    /// - `Auto` / `Both`: rename in all locations.
+    /// - `Frontmatter` / `Inline`: rename in specified scope only.
+    pub fn rename_property(&self, old_key: &str, new_key: &str, scope: &PropertyScope) -> Result<Self> {
+        match scope {
+            PropertyScope::Frontmatter => {
+                self.rename_frontmatter_key(old_key, new_key)
+            }
+            PropertyScope::Inline { .. } => {
+                self.rename_inline_property(old_key, new_key)
+            }
+            PropertyScope::Auto | PropertyScope::Both => {
+                let result = self.rename_frontmatter_key(old_key, new_key)?;
+                result.rename_inline_property(old_key, new_key)
+            }
         }
     }
 
@@ -816,5 +993,161 @@ mod tests {
         let updated = note.rename_frontmatter_key("missing", "new").unwrap();
         let fm = updated.frontmatter().unwrap().unwrap();
         assert_eq!(fm["title"].as_str(), Some("Test"));
+    }
+
+    // ========================================================================
+    // get_properties
+    // ========================================================================
+
+    #[test]
+    fn test_get_properties_merge() {
+        let content = "---\ntitle: Test\nstatus: active\n---\n\nSome text [priority::high] here.";
+        let note = Note::new("note.md", content);
+        let props = note.get_properties().unwrap();
+        assert_eq!(props["title"].as_str(), Some("Test"));
+        assert_eq!(props["status"].as_str(), Some("active"));
+        assert_eq!(props["priority"].as_str(), Some("high"));
+    }
+
+    #[test]
+    fn test_get_properties_frontmatter_precedence() {
+        let content = "---\nstatus: active\n---\n\n[status::done]";
+        let note = Note::new("note.md", content);
+        let props = note.get_properties().unwrap();
+        // Frontmatter takes precedence — inline is skipped
+        assert_eq!(props["status"].as_str(), Some("active"));
+    }
+
+    #[test]
+    fn test_get_properties_multiple_inline() {
+        let content = "[tag::a] [tag::b]";
+        let note = Note::new("note.md", content);
+        let props = note.get_properties().unwrap();
+        let tags = props["tag"].as_sequence().unwrap();
+        assert_eq!(tags.len(), 2);
+    }
+
+    // ========================================================================
+    // get_property
+    // ========================================================================
+
+    #[test]
+    fn test_get_property_from_frontmatter() {
+        let content = "---\ntitle: Test\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let val = note.get_property("title").unwrap();
+        assert_eq!(val.unwrap().as_str(), Some("Test"));
+    }
+
+    #[test]
+    fn test_get_property_from_inline() {
+        let content = "Some text [status::active] here.";
+        let note = Note::new("note.md", content);
+        let val = note.get_property("status").unwrap();
+        assert_eq!(val.unwrap().as_str(), Some("active"));
+    }
+
+    #[test]
+    fn test_get_property_missing() {
+        let content = "---\ntitle: Test\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let val = note.get_property("missing").unwrap();
+        assert!(val.is_none());
+    }
+
+    #[test]
+    fn test_get_property_frontmatter_takes_precedence() {
+        let content = "---\nstatus: active\n---\n\n[status::done]";
+        let note = Note::new("note.md", content);
+        let val = note.get_property("status").unwrap();
+        assert_eq!(val.unwrap().as_str(), Some("active"));
+    }
+
+    // ========================================================================
+    // set_property
+    // ========================================================================
+
+    #[test]
+    fn test_set_property_auto_fm_only() {
+        let content = "---\ntitle: Old\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let updated = note.set_property("title", &YamlValue::String("New".to_string()), &PropertyScope::Auto).unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        assert_eq!(fm["title"].as_str(), Some("New"));
+    }
+
+    #[test]
+    fn test_set_property_auto_inline_only() {
+        let content = "Some text [status::active] here.";
+        let note = Note::new("note.md", content);
+        let updated = note.set_property("status", &YamlValue::String("done".to_string()), &PropertyScope::Auto).unwrap();
+        assert!(updated.content.contains("[status::done]"));
+    }
+
+    #[test]
+    fn test_set_property_auto_both_error() {
+        let content = "---\nstatus: active\n---\n\n[status::done]";
+        let note = Note::new("note.md", content);
+        let result = note.set_property("status", &YamlValue::String("new".to_string()), &PropertyScope::Auto);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("both"));
+    }
+
+    #[test]
+    fn test_set_property_auto_new_defaults_fm() {
+        let content = "---\ntitle: Test\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let updated = note.set_property("newkey", &YamlValue::String("val".to_string()), &PropertyScope::Auto).unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        assert_eq!(fm["newkey"].as_str(), Some("val"));
+    }
+
+    #[test]
+    fn test_set_property_both_scope_errors() {
+        let content = "---\ntitle: Test\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let result = note.set_property("title", &YamlValue::String("val".to_string()), &PropertyScope::Both);
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // remove_property
+    // ========================================================================
+
+    #[test]
+    fn test_remove_property_both_removes_all() {
+        let content = "---\nstatus: active\n---\n\n[status::done]";
+        let note = Note::new("note.md", content);
+        let updated = note.remove_property("status", &PropertyScope::Both).unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        assert!(fm.get("status").is_none());
+        assert!(!updated.content.contains("[status::done]"));
+    }
+
+    #[test]
+    fn test_remove_property_frontmatter_only() {
+        let content = "---\nstatus: active\n---\n\n[status::done]";
+        let note = Note::new("note.md", content);
+        let updated = note.remove_property("status", &PropertyScope::Frontmatter).unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        assert!(fm.get("status").is_none());
+        // Inline should still be there
+        assert!(updated.content.contains("[status::done]"));
+    }
+
+    // ========================================================================
+    // rename_property
+    // ========================================================================
+
+    #[test]
+    fn test_rename_property_both() {
+        let content = "---\nold-key: value\n---\n\n[old-key::inline-val]";
+        let note = Note::new("note.md", content);
+        let updated = note.rename_property("old-key", "new-key", &PropertyScope::Both).unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        assert!(fm.get("old-key").is_none());
+        assert_eq!(fm["new-key"].as_str(), Some("value"));
+        assert!(updated.content.contains("[new-key::inline-val]"));
+        assert!(!updated.content.contains("[old-key"));
     }
 }

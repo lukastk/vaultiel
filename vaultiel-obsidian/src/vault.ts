@@ -481,6 +481,309 @@ export class Vault {
   }
 
   // ==========================================================================
+  // Property Operations — Scope-Specific
+  // ==========================================================================
+
+  /** Remove a frontmatter key. */
+  async removeFrontmatterKey(path: string, key: string): Promise<void> {
+    const file = getFile(this.app, path);
+    await this.app.fileManager.processFrontMatter(file, (fm) => {
+      delete fm[key];
+    });
+  }
+
+  /** Append a value to a frontmatter key's list. */
+  async appendFrontmatterValue(
+    path: string,
+    key: string,
+    value: unknown,
+  ): Promise<void> {
+    const file = getFile(this.app, path);
+    await this.app.fileManager.processFrontMatter(file, (fm) => {
+      const existing = fm[key];
+      if (existing === undefined) {
+        fm[key] = [value];
+      } else if (Array.isArray(existing)) {
+        existing.push(value);
+      } else {
+        fm[key] = [existing, value];
+      }
+    });
+  }
+
+  /** Rename a frontmatter key (atomic single processFrontMatter call). */
+  async renameFrontmatterKey(
+    path: string,
+    oldKey: string,
+    newKey: string,
+  ): Promise<void> {
+    const file = getFile(this.app, path);
+    await this.app.fileManager.processFrontMatter(file, (fm) => {
+      if (oldKey in fm) {
+        fm[newKey] = fm[oldKey];
+        delete fm[oldKey];
+      }
+    });
+  }
+
+  /** Get inline properties from a note. */
+  async getInlineProperties(path: string): Promise<InlineProperty[]> {
+    const file = getFile(this.app, path);
+    const content = await this.app.vault.cachedRead(file);
+    return parseInlineProperties(content);
+  }
+
+  /** Set an inline property's value. */
+  async setInlineProperty(
+    path: string,
+    key: string,
+    newValue: string,
+    index?: number,
+  ): Promise<void> {
+    const file = getFile(this.app, path);
+    await this.app.vault.process(file, (data) => {
+      const props = parseInlineProperties(data);
+      const matching = props.filter((p) => p.key === key);
+
+      let target: InlineProperty;
+      if (index !== undefined) {
+        const t = props[index];
+        if (!t) throw new Error(`Inline property index ${index} out of range (note has ${props.length} inline properties)`);
+        target = t;
+      } else {
+        if (matching.length === 0) throw new Error(`No inline property found with key "${key}"`);
+        if (matching.length > 1) throw new Error(`Multiple inline properties with key "${key}" — specify an index`);
+        target = matching[0]!;
+      }
+
+      const lines = data.split("\n");
+      const lineIdx = target.line - 1;
+      const line = lines[lineIdx]!;
+      const escaped = target.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const keyEscaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`\\[${keyEscaped}::${escaped}\\]`);
+      lines[lineIdx] = line.replace(re, `[${key}::${newValue}]`);
+      return lines.join("\n");
+    });
+  }
+
+  /** Remove an inline property. */
+  async removeInlineProperty(
+    path: string,
+    key?: string,
+    index?: number,
+  ): Promise<void> {
+    const file = getFile(this.app, path);
+    await this.app.vault.process(file, (data) => {
+      const props = parseInlineProperties(data);
+
+      let target: InlineProperty;
+      if (index !== undefined) {
+        const t = props[index];
+        if (!t) throw new Error(`Inline property index ${index} out of range (note has ${props.length} inline properties)`);
+        target = t;
+      } else if (key !== undefined) {
+        const matching = props.filter((p) => p.key === key);
+        if (matching.length === 0) throw new Error(`No inline property found with key "${key}"`);
+        if (matching.length > 1) throw new Error(`Multiple inline properties with key "${key}" — specify an index`);
+        target = matching[0]!;
+      } else {
+        throw new Error("Must specify either key or index to remove an inline property");
+      }
+
+      const lines = data.split("\n");
+      const lineIdx = target.line - 1;
+      const line = lines[lineIdx]!;
+      const escaped = target.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const keyEscaped = target.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`\\[${keyEscaped}::${escaped}\\]`);
+      lines[lineIdx] = line.replace(re, "");
+      return lines.join("\n");
+    });
+  }
+
+  /** Rename all inline properties with oldKey to newKey. */
+  async renameInlineProperty(
+    path: string,
+    oldKey: string,
+    newKey: string,
+  ): Promise<void> {
+    const file = getFile(this.app, path);
+    await this.app.vault.process(file, (data) => {
+      const props = parseInlineProperties(data);
+      const matching = props.filter((p) => p.key === oldKey);
+      if (matching.length === 0) return data;
+
+      const lines = data.split("\n");
+      // Process in reverse order so positions remain valid
+      const sorted = [...matching].sort((a, b) => b.line - a.line);
+      for (const prop of sorted) {
+        const lineIdx = prop.line - 1;
+        const line = lines[lineIdx]!;
+        const escaped = prop.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const keyEscaped = oldKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const re = new RegExp(`\\[${keyEscaped}::${escaped}\\]`);
+        lines[lineIdx] = line.replace(re, `[${newKey}::${prop.value}]`);
+      }
+      return lines.join("\n");
+    });
+  }
+
+  // ==========================================================================
+  // Property-Agnostic Operations
+  // ==========================================================================
+
+  /** Get merged properties (frontmatter + inline). Frontmatter takes precedence. */
+  async getProperties(path: string): Promise<Record<string, unknown>> {
+    const fmStr = this.getFrontmatter(path);
+    const fm: Record<string, unknown> = fmStr ? JSON.parse(fmStr) : {};
+    const inlineProps = await this.getInlineProperties(path);
+
+    const merged: Record<string, unknown> = { ...fm };
+    for (const prop of inlineProps) {
+      if (prop.key in merged) continue; // frontmatter takes precedence
+      const existing = merged[prop.key];
+      if (existing !== undefined) {
+        merged[prop.key] = Array.isArray(existing)
+          ? [...existing, prop.value]
+          : [existing, prop.value];
+      } else {
+        merged[prop.key] = prop.value;
+      }
+    }
+
+    return merged;
+  }
+
+  /** Get a single property by key (frontmatter checked first, then inline). */
+  async getProperty(
+    path: string,
+    key: string,
+  ): Promise<unknown | undefined> {
+    const fmStr = this.getFrontmatter(path);
+    if (fmStr) {
+      const fm = JSON.parse(fmStr) as Record<string, unknown>;
+      if (key in fm) return fm[key];
+    }
+
+    const inlineProps = await this.getInlineProperties(path);
+    const matching = inlineProps.filter((p) => p.key === key);
+    if (matching.length === 0) return undefined;
+    if (matching.length === 1) return matching[0]!.value;
+    return matching.map((p) => p.value);
+  }
+
+  /** Set a property with auto-detection. */
+  async setProperty(
+    path: string,
+    key: string,
+    value: unknown,
+    scope?: string,
+    index?: number,
+  ): Promise<void> {
+    const resolvedScope = scope ?? "auto";
+
+    if (resolvedScope === "frontmatter") {
+      await this.modifyFrontmatter(path, key, value);
+      return;
+    }
+
+    if (resolvedScope === "inline") {
+      const strValue = typeof value === "string" ? value : JSON.stringify(value);
+      await this.setInlineProperty(path, key, strValue, index);
+      return;
+    }
+
+    if (resolvedScope === "both") {
+      throw new Error("Cannot use 'both' scope for setProperty (ambiguous intent)");
+    }
+
+    // Auto-detect
+    const fmStr = this.getFrontmatter(path);
+    const fm: Record<string, unknown> = fmStr ? JSON.parse(fmStr) : {};
+    const inlineProps = await this.getInlineProperties(path);
+    const inFm = key in fm;
+    const inInline = inlineProps.some((p) => p.key === key);
+
+    if (inFm && inInline) {
+      throw new Error(`Property "${key}" exists in both frontmatter and inline — specify a scope`);
+    }
+
+    if (inFm) {
+      await this.modifyFrontmatter(path, key, value);
+    } else if (inInline) {
+      const strValue = typeof value === "string" ? value : JSON.stringify(value);
+      await this.setInlineProperty(path, key, strValue, index);
+    } else {
+      // New key — default to frontmatter
+      await this.modifyFrontmatter(path, key, value);
+    }
+  }
+
+  /** Remove a property. Auto/Both: remove from all locations. */
+  async removeProperty(
+    path: string,
+    key: string,
+    scope?: string,
+    index?: number,
+  ): Promise<void> {
+    const resolvedScope = scope ?? "auto";
+
+    if (resolvedScope === "frontmatter") {
+      await this.removeFrontmatterKey(path, key);
+      return;
+    }
+
+    if (resolvedScope === "inline") {
+      await this.removeInlineProperty(path, key, index);
+      return;
+    }
+
+    // Auto or Both: remove from all locations
+    const fmStr = this.getFrontmatter(path);
+    if (fmStr) {
+      const fm = JSON.parse(fmStr) as Record<string, unknown>;
+      if (key in fm) {
+        await this.removeFrontmatterKey(path, key);
+      }
+    }
+
+    // Remove all inline occurrences (reverse order)
+    const inlineProps = await this.getInlineProperties(path);
+    const matchingIndices = inlineProps
+      .map((p, i) => ({ key: p.key, index: i }))
+      .filter((p) => p.key === key)
+      .map((p) => p.index);
+    for (let i = matchingIndices.length - 1; i >= 0; i--) {
+      await this.removeInlineProperty(path, undefined, matchingIndices[i]);
+    }
+  }
+
+  /** Rename a property key. Auto/Both: rename in all locations. */
+  async renameProperty(
+    path: string,
+    oldKey: string,
+    newKey: string,
+    scope?: string,
+  ): Promise<void> {
+    const resolvedScope = scope ?? "auto";
+
+    if (resolvedScope === "frontmatter") {
+      await this.renameFrontmatterKey(path, oldKey, newKey);
+      return;
+    }
+
+    if (resolvedScope === "inline") {
+      await this.renameInlineProperty(path, oldKey, newKey);
+      return;
+    }
+
+    // Auto or Both: rename in all locations
+    await this.renameFrontmatterKey(path, oldKey, newKey);
+    await this.renameInlineProperty(path, oldKey, newKey);
+  }
+
+  // ==========================================================================
   // Metadata Operations (async)
   // ==========================================================================
 

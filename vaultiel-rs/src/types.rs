@@ -345,6 +345,19 @@ pub struct TaskTextItem {
     pub children: Vec<TaskChild>,
 }
 
+/// Scope for property-agnostic operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PropertyScope {
+    /// Detect where key lives; error if ambiguous; default to frontmatter if new.
+    Auto,
+    /// Frontmatter only.
+    Frontmatter,
+    /// Inline only. Optional index disambiguates when multiple inline props have same key.
+    Inline { index: Option<usize> },
+    /// Operate on all locations.
+    Both,
+}
+
 impl From<Task> for HierarchicalTask {
     fn from(task: Task) -> Self {
         HierarchicalTask {

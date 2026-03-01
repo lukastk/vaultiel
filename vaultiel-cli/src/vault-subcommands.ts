@@ -1,3 +1,4 @@
+import { JsPropertyScope } from "@vaultiel/node";
 import type { CLISubcommand } from "./types.js";
 
 export const vaultSubcommands: CLISubcommand[] = [
@@ -213,24 +214,9 @@ export const vaultSubcommands: CLISubcommand[] = [
         return { data: JSON.parse(json) as unknown, exitCode: 0 };
       }
 
-      // Merge: frontmatter + inline
-      const fmJson = vault.getFrontmatter(note);
-      const fm = fmJson ? JSON.parse(fmJson) as Record<string, unknown> : {};
-      const inlineProps = vault.getInlineProperties(note);
-
-      const merged: Record<string, unknown> = { ...fm };
-      for (const prop of inlineProps) {
-        if (prop.key in merged) {
-          const existing = merged[prop.key];
-          merged[prop.key] = Array.isArray(existing)
-            ? [...existing, prop.value]
-            : [existing, prop.value];
-        } else {
-          merged[prop.key] = prop.value;
-        }
-      }
-
-      return { data: merged, exitCode: 0 };
+      // Use property-agnostic merged getter
+      const json = vault.getProperties(note);
+      return { data: JSON.parse(json) as unknown, exitCode: 0 };
     },
   },
 
@@ -264,29 +250,25 @@ export const vaultSubcommands: CLISubcommand[] = [
       const onlyInline = args["inline"] as boolean;
       const onlyFrontmatter = args["frontmatter"] as boolean;
 
-      const values: unknown[] = [];
-
-      if (!onlyInline) {
-        const fmJson = vault.getFrontmatter(note);
-        if (fmJson) {
-          const fm = JSON.parse(fmJson) as Record<string, unknown>;
-          if (key in fm) values.push(fm[key]);
-        }
-      }
-
-      if (!onlyFrontmatter) {
+      if (onlyInline) {
         const inlineProps = vault.getInlineProperties(note);
-        for (const prop of inlineProps) {
-          if (prop.key === key) values.push(prop.value);
-        }
+        const values = inlineProps.filter(p => p.key === key).map(p => p.value);
+        if (values.length === 0) return { exitCode: 1 };
+        return { data: values.length === 1 ? values[0] : values, exitCode: 0 };
       }
 
-      if (values.length === 0) {
-        return { exitCode: 1 };
+      if (onlyFrontmatter) {
+        const fmJson = vault.getFrontmatter(note);
+        if (!fmJson) return { exitCode: 1 };
+        const fm = JSON.parse(fmJson) as Record<string, unknown>;
+        if (!(key in fm)) return { exitCode: 1 };
+        return { data: fm[key], exitCode: 0 };
       }
 
-      const result = values.length === 1 ? values[0] : values;
-      return { data: result, exitCode: 0 };
+      // Use property-agnostic single-key getter
+      const json = vault.getProperty(note, key);
+      if (json === null) return { exitCode: 1 };
+      return { data: JSON.parse(json) as unknown, exitCode: 0 };
     },
   },
 
@@ -721,36 +703,13 @@ export const vaultSubcommands: CLISubcommand[] = [
         return { exitCode: 0 };
       }
 
-      // Auto-detect: check where the key exists
-      const fmJson = vault.getFrontmatter(note);
-      const fm = fmJson ? JSON.parse(fmJson) as Record<string, unknown> : {};
-      const inlineProps = vault.getInlineProperties(note);
-      const inFm = key in fm;
-      const inInline = inlineProps.some(p => p.key === key);
-
       if (append) {
         vault.appendFrontmatterValue(note, key, value);
         return { exitCode: 0 };
       }
 
-      if (inFm && !inInline) {
-        vault.modifyFrontmatter(note, key, value);
-        return { exitCode: 0 };
-      }
-
-      if (inInline && !inFm) {
-        vault.setInlineProperty(note, key, value, index ?? null);
-        return { exitCode: 0 };
-      }
-
-      if (inFm && inInline) {
-        throw new Error(
-          `Property "${key}" exists in both frontmatter and inline. Use --frontmatter or --inline to specify.`,
-        );
-      }
-
-      // Key doesn't exist anywhere — default to frontmatter
-      vault.modifyFrontmatter(note, key, value);
+      // Use property-agnostic setter with auto-detection
+      vault.setProperty(note, key, value, null, index ?? null);
       return { exitCode: 0 };
     },
   },
@@ -802,22 +761,8 @@ export const vaultSubcommands: CLISubcommand[] = [
         return { exitCode: 0 };
       }
 
-      // No flags: remove from both
-      const fmJson = vault.getFrontmatter(note);
-      if (fmJson) {
-        const fm = JSON.parse(fmJson) as Record<string, unknown>;
-        if (key in fm) {
-          vault.removeFrontmatterKey(note, key);
-        }
-      }
-
-      const inlineProps = vault.getInlineProperties(note);
-      const matching = inlineProps.filter(p => p.key === key);
-      // Remove inline properties in reverse order so indices stay valid
-      for (let i = matching.length - 1; i >= 0; i--) {
-        vault.removeInlineProperty(note, key, null);
-      }
-
+      // No flags: use property-agnostic remover (removes from all locations)
+      vault.removeProperty(note, key, JsPropertyScope.Both, index ?? null);
       return { exitCode: 0 };
     },
   },
@@ -864,16 +809,8 @@ export const vaultSubcommands: CLISubcommand[] = [
         return { exitCode: 0 };
       }
 
-      // No flags: rename in both
-      const fmJson = vault.getFrontmatter(note);
-      if (fmJson) {
-        const fm = JSON.parse(fmJson) as Record<string, unknown>;
-        if (fromKey in fm) {
-          vault.renameFrontmatterKey(note, fromKey, toKey);
-        }
-      }
-
-      vault.renameInlineProperty(note, fromKey, toKey);
+      // No flags: use property-agnostic renamer (renames in all locations)
+      vault.renameProperty(note, fromKey, toKey, JsPropertyScope.Both);
       return { exitCode: 0 };
     },
   },

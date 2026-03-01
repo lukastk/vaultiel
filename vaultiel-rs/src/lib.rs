@@ -45,5 +45,5 @@ pub use config::TaskConfig;
 pub use error::{Result, VaultError};
 pub use note::Note;
 pub use search::{SearchMatch, SearchQuery, SearchResult};
-pub use types::*;
+pub use types::*;  // includes PropertyScope
 pub use vault::Vault;
