@@ -2,10 +2,10 @@
 
 use crate::error::Result;
 use crate::parser::{
-    self, parse_block_ids, parse_headings, parse_inline_attrs, parse_all_links, parse_tags,
+    self, parse_block_ids, parse_headings, parse_inline_properties, parse_all_links, parse_tags,
     split_frontmatter,
 };
-use crate::types::{BlockId, Heading, InlineAttr, Link, Tag};
+use crate::types::{BlockId, Heading, InlineProperty, Link, Tag};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 use std::path::{Path, PathBuf};
@@ -115,9 +115,9 @@ impl Note {
         parse_headings(&self.content)
     }
 
-    /// Parse all inline attributes in the note.
-    pub fn inline_attrs(&self) -> Vec<InlineAttr> {
-        parse_inline_attrs(&self.content)
+    /// Parse all inline properties in the note.
+    pub fn inline_properties(&self) -> Vec<InlineProperty> {
+        parse_inline_properties(&self.content)
     }
 
     /// Update the note's frontmatter.
@@ -174,6 +174,225 @@ impl Note {
         Self {
             path: self.path.clone(),
             content: new_content.into(),
+        }
+    }
+
+    /// Remove a frontmatter key.
+    ///
+    /// Returns a new `Note` with the specified key removed from frontmatter.
+    /// If the note has no frontmatter or the key doesn't exist, returns a clone.
+    pub fn remove_frontmatter_key(&self, key: &str) -> Result<Self> {
+        let fm = self.frontmatter()?;
+        match fm {
+            Some(YamlValue::Mapping(mut map)) => {
+                map.remove(&YamlValue::String(key.to_string()));
+                self.with_frontmatter(&YamlValue::Mapping(map))
+            }
+            Some(_) => Ok(self.clone()),
+            None => Ok(self.clone()),
+        }
+    }
+
+    /// Append a value to a frontmatter key's list.
+    ///
+    /// - If the key is absent, creates it as a single-element list.
+    /// - If the key holds a scalar, converts to a list and appends.
+    /// - If the key is already a list, appends the value.
+    pub fn append_frontmatter_value(&self, key: &str, value: &YamlValue) -> Result<Self> {
+        let fm = self.frontmatter()?;
+        let mut map = match fm {
+            Some(YamlValue::Mapping(map)) => map,
+            Some(_) => serde_yaml::Mapping::new(),
+            None => serde_yaml::Mapping::new(),
+        };
+
+        let yaml_key = YamlValue::String(key.to_string());
+        let existing = map.remove(&yaml_key);
+
+        let new_value = match existing {
+            None => YamlValue::Sequence(vec![value.clone()]),
+            Some(YamlValue::Sequence(mut seq)) => {
+                seq.push(value.clone());
+                YamlValue::Sequence(seq)
+            }
+            Some(scalar) => YamlValue::Sequence(vec![scalar, value.clone()]),
+        };
+
+        map.insert(yaml_key, new_value);
+        self.with_frontmatter(&YamlValue::Mapping(map))
+    }
+
+    /// Set an inline property's value.
+    ///
+    /// Finds the inline property by key (or by index if multiple exist).
+    /// If `index` is `None` and there are multiple properties with the same key, returns an error.
+    /// Uses `start_col`/`end_col` for precise replacement on the target line.
+    pub fn set_inline_property(&self, key: &str, new_value: &str, index: Option<usize>) -> Result<Self> {
+        let props = self.inline_properties();
+        let matching: Vec<_> = props.iter().enumerate()
+            .filter(|(_, p)| p.key == key)
+            .collect();
+
+        let target = match index {
+            Some(idx) => {
+                props.get(idx).ok_or_else(|| crate::error::VaultError::Other(
+                    format!("Inline property index {} out of range (note has {} inline properties)", idx, props.len())
+                ))?
+            }
+            None => {
+                if matching.is_empty() {
+                    return Err(crate::error::VaultError::Other(
+                        format!("No inline property found with key {:?}", key)
+                    ));
+                }
+                if matching.len() > 1 {
+                    return Err(crate::error::VaultError::Other(
+                        format!("Multiple inline properties with key {:?} — specify an index", key)
+                    ));
+                }
+                matching[0].1
+            }
+        };
+
+        let formatted = crate::parser::inline_property::format_inline_property(key, new_value);
+
+        let lines: Vec<&str> = self.content.lines().collect();
+        let line_idx = target.line - 1;
+        if line_idx >= lines.len() {
+            return Err(crate::error::VaultError::Other(
+                format!("Line {} is out of range", target.line)
+            ));
+        }
+
+        let line = lines[line_idx];
+        let new_line = format!("{}{}{}", &line[..target.start_col], formatted, &line[target.end_col..]);
+
+        let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        new_lines[line_idx] = new_line;
+
+        let mut new_content = new_lines.join("\n");
+        if self.content.ends_with('\n') {
+            new_content.push('\n');
+        }
+
+        Ok(Self {
+            path: self.path.clone(),
+            content: new_content,
+        })
+    }
+
+    /// Remove an inline property.
+    ///
+    /// Finds by key (if provided) or by index. If finding by key and multiple
+    /// properties share the same key, returns an error.
+    pub fn remove_inline_property(&self, key: Option<&str>, index: Option<usize>) -> Result<Self> {
+        let props = self.inline_properties();
+
+        let target = match (key, index) {
+            (_, Some(idx)) => {
+                props.get(idx).ok_or_else(|| crate::error::VaultError::Other(
+                    format!("Inline property index {} out of range (note has {} inline properties)", idx, props.len())
+                ))?
+            }
+            (Some(k), None) => {
+                let matching: Vec<_> = props.iter().filter(|p| p.key == k).collect();
+                if matching.is_empty() {
+                    return Err(crate::error::VaultError::Other(
+                        format!("No inline property found with key {:?}", k)
+                    ));
+                }
+                if matching.len() > 1 {
+                    return Err(crate::error::VaultError::Other(
+                        format!("Multiple inline properties with key {:?} — specify an index", k)
+                    ));
+                }
+                matching[0]
+            }
+            (None, None) => {
+                return Err(crate::error::VaultError::Other(
+                    "Must specify either key or index to remove an inline property".to_string()
+                ));
+            }
+        };
+
+        let lines: Vec<&str> = self.content.lines().collect();
+        let line_idx = target.line - 1;
+        if line_idx >= lines.len() {
+            return Err(crate::error::VaultError::Other(
+                format!("Line {} is out of range", target.line)
+            ));
+        }
+
+        let line = lines[line_idx];
+        let new_line = format!("{}{}", &line[..target.start_col], &line[target.end_col..]);
+
+        let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        new_lines[line_idx] = new_line;
+
+        let mut new_content = new_lines.join("\n");
+        if self.content.ends_with('\n') {
+            new_content.push('\n');
+        }
+
+        Ok(Self {
+            path: self.path.clone(),
+            content: new_content,
+        })
+    }
+
+    /// Rename all inline properties with `old_key` to `new_key`.
+    pub fn rename_inline_property(&self, old_key: &str, new_key: &str) -> Result<Self> {
+        let props = self.inline_properties();
+        let matching: Vec<_> = props.iter().filter(|p| p.key == old_key).collect();
+
+        if matching.is_empty() {
+            return Ok(self.clone());
+        }
+
+        // Process in reverse order so column offsets remain valid
+        let mut lines: Vec<String> = self.content.lines().map(|l| l.to_string()).collect();
+
+        let mut sorted = matching.clone();
+        sorted.sort_by(|a, b| b.line.cmp(&a.line).then(b.start_col.cmp(&a.start_col)));
+
+        for prop in sorted {
+            let line_idx = prop.line - 1;
+            if line_idx >= lines.len() { continue; }
+
+            let line = &lines[line_idx];
+            let formatted = crate::parser::inline_property::format_inline_property(new_key, &prop.value);
+            let new_line = format!("{}{}{}", &line[..prop.start_col], formatted, &line[prop.end_col..]);
+            lines[line_idx] = new_line;
+        }
+
+        let mut new_content = lines.join("\n");
+        if self.content.ends_with('\n') {
+            new_content.push('\n');
+        }
+
+        Ok(Self {
+            path: self.path.clone(),
+            content: new_content,
+        })
+    }
+
+    /// Rename a frontmatter key.
+    ///
+    /// Removes the old key and inserts the new key with the same value.
+    /// If the old key doesn't exist, returns a clone.
+    pub fn rename_frontmatter_key(&self, old_key: &str, new_key: &str) -> Result<Self> {
+        let fm = self.frontmatter()?;
+        match fm {
+            Some(YamlValue::Mapping(mut map)) => {
+                let old_yaml_key = YamlValue::String(old_key.to_string());
+                if let Some(value) = map.remove(&old_yaml_key) {
+                    map.insert(YamlValue::String(new_key.to_string()), value);
+                    self.with_frontmatter(&YamlValue::Mapping(map))
+                } else {
+                    Ok(self.clone())
+                }
+            }
+            _ => Ok(self.clone()),
         }
     }
 
@@ -412,5 +631,190 @@ mod tests {
         let result = note.set_task_symbol(0, 'x');
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("1-indexed"));
+    }
+
+    // ========================================================================
+    // remove_frontmatter_key
+    // ========================================================================
+
+    #[test]
+    fn test_remove_frontmatter_key() {
+        let content = "---\ntitle: Test\ntags:\n  - rust\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let updated = note.remove_frontmatter_key("title").unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        assert!(fm.get("title").is_none());
+        assert!(fm.get("tags").is_some());
+    }
+
+    #[test]
+    fn test_remove_frontmatter_key_nonexistent() {
+        let content = "---\ntitle: Test\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let updated = note.remove_frontmatter_key("nonexistent").unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        assert_eq!(fm["title"].as_str(), Some("Test"));
+    }
+
+    #[test]
+    fn test_remove_frontmatter_key_no_frontmatter() {
+        let note = Note::new("note.md", "Just content");
+        let updated = note.remove_frontmatter_key("title").unwrap();
+        assert_eq!(updated.content, "Just content");
+    }
+
+    // ========================================================================
+    // append_frontmatter_value
+    // ========================================================================
+
+    #[test]
+    fn test_append_frontmatter_value_new_key() {
+        let content = "---\ntitle: Test\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let updated = note.append_frontmatter_value("tags", &YamlValue::String("rust".to_string())).unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        let tags = fm["tags"].as_sequence().unwrap();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].as_str(), Some("rust"));
+    }
+
+    #[test]
+    fn test_append_frontmatter_value_to_scalar() {
+        let content = "---\ntag: existing\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let updated = note.append_frontmatter_value("tag", &YamlValue::String("new".to_string())).unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        let tags = fm["tag"].as_sequence().unwrap();
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags[0].as_str(), Some("existing"));
+        assert_eq!(tags[1].as_str(), Some("new"));
+    }
+
+    #[test]
+    fn test_append_frontmatter_value_to_list() {
+        let content = "---\ntags:\n  - a\n  - b\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let updated = note.append_frontmatter_value("tags", &YamlValue::String("c".to_string())).unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        let tags = fm["tags"].as_sequence().unwrap();
+        assert_eq!(tags.len(), 3);
+        assert_eq!(tags[2].as_str(), Some("c"));
+    }
+
+    // ========================================================================
+    // set_inline_property
+    // ========================================================================
+
+    #[test]
+    fn test_set_inline_property() {
+        let content = "Some text [status::active] here.";
+        let note = Note::new("note.md", content);
+        let updated = note.set_inline_property("status", "done", None).unwrap();
+        assert!(updated.content.contains("[status::done]"));
+        assert!(!updated.content.contains("[status::active]"));
+    }
+
+    #[test]
+    fn test_set_inline_property_by_index() {
+        let content = "[tag::a] [tag::b]";
+        let note = Note::new("note.md", content);
+        let updated = note.set_inline_property("tag", "c", Some(1)).unwrap();
+        assert!(updated.content.contains("[tag::a]"));
+        assert!(updated.content.contains("[tag::c]"));
+        assert!(!updated.content.contains("[tag::b]"));
+    }
+
+    #[test]
+    fn test_set_inline_property_ambiguous_error() {
+        let content = "[tag::a] [tag::b]";
+        let note = Note::new("note.md", content);
+        let result = note.set_inline_property("tag", "c", None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Multiple"));
+    }
+
+    #[test]
+    fn test_set_inline_property_not_found() {
+        let content = "No properties here";
+        let note = Note::new("note.md", content);
+        let result = note.set_inline_property("missing", "val", None);
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // remove_inline_property
+    // ========================================================================
+
+    #[test]
+    fn test_remove_inline_property_by_key() {
+        let content = "Text [status::active] more text";
+        let note = Note::new("note.md", content);
+        let updated = note.remove_inline_property(Some("status"), None).unwrap();
+        assert!(!updated.content.contains("[status::active]"));
+        assert!(updated.content.contains("Text  more text"));
+    }
+
+    #[test]
+    fn test_remove_inline_property_by_index() {
+        let content = "[tag::a] [tag::b]";
+        let note = Note::new("note.md", content);
+        let updated = note.remove_inline_property(None, Some(0)).unwrap();
+        assert!(!updated.content.contains("[tag::a]"));
+        assert!(updated.content.contains("[tag::b]"));
+    }
+
+    #[test]
+    fn test_remove_inline_property_ambiguous_error() {
+        let content = "[tag::a] [tag::b]";
+        let note = Note::new("note.md", content);
+        let result = note.remove_inline_property(Some("tag"), None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Multiple"));
+    }
+
+    // ========================================================================
+    // rename_inline_property
+    // ========================================================================
+
+    #[test]
+    fn test_rename_inline_property() {
+        let content = "[old-key::value1] some [old-key::value2]";
+        let note = Note::new("note.md", content);
+        let updated = note.rename_inline_property("old-key", "new-key").unwrap();
+        assert!(updated.content.contains("[new-key::value1]"));
+        assert!(updated.content.contains("[new-key::value2]"));
+        assert!(!updated.content.contains("[old-key"));
+    }
+
+    #[test]
+    fn test_rename_inline_property_nonexistent() {
+        let content = "[key::value]";
+        let note = Note::new("note.md", content);
+        let updated = note.rename_inline_property("missing", "new").unwrap();
+        assert_eq!(updated.content, content);
+    }
+
+    // ========================================================================
+    // rename_frontmatter_key
+    // ========================================================================
+
+    #[test]
+    fn test_rename_frontmatter_key() {
+        let content = "---\nold-key: value\ntitle: Test\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let updated = note.rename_frontmatter_key("old-key", "new-key").unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        assert!(fm.get("old-key").is_none());
+        assert_eq!(fm["new-key"].as_str(), Some("value"));
+        assert_eq!(fm["title"].as_str(), Some("Test"));
+    }
+
+    #[test]
+    fn test_rename_frontmatter_key_nonexistent() {
+        let content = "---\ntitle: Test\n---\n\nBody";
+        let note = Note::new("note.md", content);
+        let updated = note.rename_frontmatter_key("missing", "new").unwrap();
+        let fm = updated.frontmatter().unwrap().unwrap();
+        assert_eq!(fm["title"].as_str(), Some("Test"));
     }
 }

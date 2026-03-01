@@ -107,6 +107,17 @@ pub struct JsLinkRef {
     pub embed: bool,
 }
 
+#[napi(object)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsInlineProperty {
+    pub index: u32,
+    pub key: String,
+    pub value: String,
+    pub line: u32,
+    pub start_col: u32,
+    pub end_col: u32,
+}
+
 // ============================================================================
 // Task Config JS types
 // ============================================================================
@@ -568,6 +579,109 @@ impl JsVault {
             .map_err(|e| Error::from_reason(e.to_string()))
     }
 
+    // ========================================================================
+    // Property Operations
+    // ========================================================================
+
+    /// Get inline properties from a note.
+    #[napi]
+    pub fn get_inline_properties(&self, path: String) -> Result<Vec<JsInlineProperty>> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        let props = note.inline_properties();
+        Ok(props
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| JsInlineProperty {
+                index: i as u32,
+                key: p.key,
+                value: p.value,
+                line: p.line as u32,
+                start_col: p.start_col as u32,
+                end_col: p.end_col as u32,
+            })
+            .collect())
+    }
+
+    /// Remove a frontmatter key.
+    #[napi]
+    pub fn remove_frontmatter_key(&self, path: String, key: String) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let updated = note.remove_frontmatter_key(&key)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Append a value to a frontmatter key's list.
+    /// Value is parsed as YAML (like modifyFrontmatter).
+    #[napi]
+    pub fn append_frontmatter_value(&self, path: String, key: String, value: String) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(&value)
+            .unwrap_or(serde_yaml::Value::String(value));
+
+        let updated = note.append_frontmatter_value(&key, &yaml_value)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Set an inline property's value.
+    #[napi]
+    pub fn set_inline_property(&self, path: String, key: String, new_value: String, index: Option<u32>) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let updated = note.set_inline_property(&key, &new_value, index.map(|i| i as usize))
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Remove an inline property.
+    #[napi]
+    pub fn remove_inline_property(&self, path: String, key: Option<String>, index: Option<u32>) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let updated = note.remove_inline_property(key.as_deref(), index.map(|i| i as usize))
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Rename all inline properties with old_key to new_key.
+    #[napi]
+    pub fn rename_inline_property(&self, path: String, old_key: String, new_key: String) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let updated = note.rename_inline_property(&old_key, &new_key)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    /// Rename a frontmatter key.
+    #[napi]
+    pub fn rename_frontmatter_key(&self, path: String, old_key: String, new_key: String) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        let note = self.vault.load_note(&note_path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let updated = note.rename_frontmatter_key(&old_key, &new_key)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        updated.save(&self.vault.root)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
     /// Inspect a note — returns full JSON representation.
     #[napi]
     pub fn inspect(&self, path: String) -> Result<String> {
@@ -590,13 +704,13 @@ impl JsVault {
         let tags = note.tags();
         let headings = parse_headings(&note.content);
         let block_ids = vaultiel::parser::parse_block_ids(&note.content);
-        let inline_attrs = vaultiel::parser::parse_inline_attrs(&note.content);
+        let inline_properties = vaultiel::parser::parse_inline_properties(&note.content);
 
         let result = serde_json::json!({
             "path": note_path.to_string_lossy(),
             "name": note.name(),
             "frontmatter": frontmatter,
-            "inline_attrs": inline_attrs,
+            "inline_properties": inline_properties,
             "headings": headings,
             "tasks": tasks,
             "links": {
