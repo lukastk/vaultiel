@@ -4,9 +4,9 @@
  * Standalone CLI for vaultiel vault operations.
  *
  * Usage:
- *   vaultiel-cli --vault <path> <subcommand> [args]
- *   vaultiel-cli --vault <path> --help
- *   vaultiel-cli --vault <path> <subcommand> --help
+ *   vaultiel --vault <path> <subcommand> [args]
+ *   vaultiel --vault <path> --help
+ *   vaultiel --vault <path> <subcommand> --help
  */
 
 import { resolve } from "node:path";
@@ -15,7 +15,7 @@ import { vaultSubcommands } from "./vault-subcommands.js";
 import { formatSubcommandList } from "./parser.js";
 import { dispatchVaultSubcommand } from "./dispatch.js";
 
-const CLI_NAME = "vaultiel-cli";
+const CLI_NAME = "vaultiel";
 const args = process.argv.slice(2);
 
 // Parse --vault

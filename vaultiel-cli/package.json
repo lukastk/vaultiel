@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "vaultiel-cli": "dist/cli.js"
+    "vaultiel": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
