@@ -18,17 +18,23 @@ import { dispatchVaultSubcommand } from "./dispatch.js";
 const CLI_NAME = "vaultiel";
 const args = process.argv.slice(2);
 
+// Handle --help before requiring --vault
+if (args.length === 0 || (args.includes("--help") && !args.includes("--vault"))) {
+  console.log(formatSubcommandList(vaultSubcommands, CLI_NAME));
+  process.exit(0);
+}
+
 // Parse --vault
 const vaultIdx = args.indexOf("--vault");
 if (vaultIdx === -1 || vaultIdx + 1 >= args.length) {
   console.error(`Usage: ${CLI_NAME} --vault <path> <subcommand> [args]`);
-  console.error(`       ${CLI_NAME} --vault <path> --help`);
+  console.error(`\nRun '${CLI_NAME} --help' for a list of subcommands.`);
   process.exit(1);
 }
 const vaultPath = resolve(args[vaultIdx + 1]!);
 const remaining = [...args.slice(0, vaultIdx), ...args.slice(vaultIdx + 2)];
 
-// Top-level --help
+// Top-level --help with --vault
 if (remaining.length === 0 || (remaining.length === 1 && remaining[0] === "--help")) {
   console.log(formatSubcommandList(vaultSubcommands, CLI_NAME));
   process.exit(0);
