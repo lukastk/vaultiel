@@ -313,6 +313,14 @@ impl JsVault {
         Ok(())
     }
 
+    /// Set the raw content of a note (replaces everything including frontmatter).
+    #[napi]
+    pub fn set_raw_content(&self, path: String, content: String) -> Result<()> {
+        let note_path = self.vault.normalize_note_path(&path);
+        self.vault.set_raw_content(&note_path, &content)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
     /// Delete a note.
     #[napi]
     pub fn delete_note(&self, path: String) -> Result<()> {

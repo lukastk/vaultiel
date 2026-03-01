@@ -406,6 +406,12 @@ export class Vault {
     });
   }
 
+  /** Set the raw content of a note (replaces everything including frontmatter). */
+  async setRawContent(path: string, content: string): Promise<void> {
+    const file = getFile(this.app, path);
+    await this.app.vault.process(file, () => content);
+  }
+
   /** Modify a frontmatter field. */
   async modifyFrontmatter(
     path: string,

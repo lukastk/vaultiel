@@ -68,6 +68,16 @@ impl Vault {
         Ok(note)
     }
 
+    /// Set the raw content of an existing note (replaces everything including frontmatter).
+    pub fn set_raw_content(&self, relative_path: &Path, content: &str) -> Result<()> {
+        if !self.note_exists(relative_path) {
+            return Err(VaultError::NoteNotFound(relative_path.to_path_buf()));
+        }
+
+        let note = Note::new(relative_path, content);
+        self.save_note(&note)
+    }
+
     /// Delete a note.
     pub fn delete_note(&self, relative_path: &Path) -> Result<()> {
         if !self.note_exists(relative_path) {
@@ -277,6 +287,29 @@ mod tests {
 
         let result = vault.create_note(&path, "Second");
         assert!(matches!(result, Err(VaultError::NoteAlreadyExists(_))));
+    }
+
+    #[test]
+    fn test_set_raw_content() {
+        let (_dir, vault) = setup_test_vault();
+
+        let path = PathBuf::from("test.md");
+        vault.create_note(&path, "---\ntitle: Old\n---\nOld body").unwrap();
+
+        let new_content = "---\ntitle: New\n---\nNew body";
+        vault.set_raw_content(&path, new_content).unwrap();
+
+        let note = vault.load_note(&path).unwrap();
+        assert_eq!(note.content, new_content);
+    }
+
+    #[test]
+    fn test_set_raw_content_nonexistent_fails() {
+        let (_dir, vault) = setup_test_vault();
+
+        let path = PathBuf::from("nonexistent.md");
+        let result = vault.set_raw_content(&path, "content");
+        assert!(matches!(result, Err(VaultError::NoteNotFound(_))));
     }
 
     #[test]
