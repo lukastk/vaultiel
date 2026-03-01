@@ -57,6 +57,18 @@ function getFile(app: App, path: string): TFile {
  * Methods that use metadataCache are synchronous.
  * Methods that read/write file content are async.
  */
+/** Convert a Dataview value back to a plain string (for inline-derived values). */
+function dvValueToString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value != null && typeof value === "object") {
+    if ("toISO" in value && typeof (value as any).toISO === "function")
+      return (value as any).toISO();
+    if ("path" in value && typeof (value as any).path === "string")
+      return (value as any).path;
+  }
+  return String(value);
+}
+
 export class Vault {
   private app: App;
   private taskConfig: TaskConfig;
@@ -64,6 +76,16 @@ export class Vault {
   constructor(app: App, taskConfig: TaskConfig) {
     this.app = app;
     this.taskConfig = taskConfig;
+  }
+
+  /**
+   * Try to get a Dataview cached page for the given path.
+   * Returns null if Dataview is not installed, not ready, or the page doesn't exist.
+   */
+  private getDataviewPage(path: string): Record<string, any> | null {
+    const api = (this.app as any).plugins?.plugins?.["dataview"]?.api;
+    if (!api) return null;
+    return api.page(path) ?? null;
   }
 
   /** Get the vault root path. */
@@ -107,6 +129,14 @@ export class Vault {
 
   /** Get note frontmatter as JSON string. */
   getFrontmatter(path: string): string | null {
+    const dvPage = this.getDataviewPage(path);
+    if (dvPage) {
+      const fm = dvPage.file?.frontmatter;
+      if (!fm) return null;
+      const { position: _, ...clean } = fm;
+      return JSON.stringify(clean);
+    }
+
     const file = getFile(this.app, path);
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache?.frontmatter) return null;
@@ -635,6 +665,24 @@ export class Vault {
 
   /** Get merged properties (frontmatter + inline). Frontmatter takes precedence. */
   async getProperties(path: string): Promise<Record<string, unknown>> {
+    const dvPage = this.getDataviewPage(path);
+    if (dvPage) {
+      const fm: Record<string, unknown> = dvPage.file?.frontmatter
+        ? (() => { const { position: _, ...clean } = dvPage.file.frontmatter; return clean; })()
+        : {};
+      const merged: Record<string, unknown> = { ...fm };
+      for (const key of Object.keys(dvPage)) {
+        if (key === "file" || key in fm) continue;
+        const val = dvPage[key];
+        if (Array.isArray(val)) {
+          merged[key] = val.map(dvValueToString);
+        } else {
+          merged[key] = dvValueToString(val);
+        }
+      }
+      return merged;
+    }
+
     const fmStr = this.getFrontmatter(path);
     const fm: Record<string, unknown> = fmStr ? JSON.parse(fmStr) : {};
     const inlineProps = await this.getInlineProperties(path);
@@ -660,6 +708,21 @@ export class Vault {
     path: string,
     key: string,
   ): Promise<unknown | undefined> {
+    const dvPage = this.getDataviewPage(path);
+    if (dvPage) {
+      const fm = dvPage.file?.frontmatter;
+      if (fm) {
+        const { position: _, ...clean } = fm;
+        if (key in clean) return clean[key];
+      }
+      if (key in dvPage && key !== "file") {
+        const val = dvPage[key];
+        if (Array.isArray(val)) return val.map(dvValueToString);
+        return dvValueToString(val);
+      }
+      return undefined;
+    }
+
     const fmStr = this.getFrontmatter(path);
     if (fmStr) {
       const fm = JSON.parse(fmStr) as Record<string, unknown>;
