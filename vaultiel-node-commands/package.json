@@ -1,13 +1,10 @@
 {
-  "name": "@vaultiel/cli",
+  "name": "@vaultiel/node-commands",
   "version": "0.1.0",
-  "description": "CLI for vaultiel vault operations",
+  "description": "TypeScript vault subcommand definitions for Node.js CLIs",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "bin": {
-    "vaultiel": "dist/cli.js"
-  },
   "scripts": {
     "build": "tsc",
     "check": "tsc --noEmit"
