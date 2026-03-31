@@ -85,6 +85,18 @@ enum Commands {
         /// Search query
         query: String,
     },
+    /// Bulk frontmatter dump as JSONL (one JSON object per line)
+    AllFrontmatter {
+        /// Glob pattern to filter notes
+        #[arg(long)]
+        pattern: Option<String>,
+        /// Only include notes that have this frontmatter key
+        #[arg(long)]
+        has_key: Option<String>,
+        /// Filter: key=value (only include notes where frontmatter key equals value)
+        #[arg(long, name = "KEY=VALUE")]
+        r#where: Option<String>,
+    },
 
     // --- Parse ---
     /// Get links from a note
@@ -273,6 +285,9 @@ fn main() {
             commands::read::property(&vault, &note, &key, inline, frontmatter)
         }
         Commands::Search { query } => commands::read::search(&vault, &query),
+        Commands::AllFrontmatter { pattern, has_key, r#where } => {
+            commands::read::all_frontmatter(&vault, pattern.as_deref(), has_key.as_deref(), r#where.as_deref())
+        }
 
         // Parse
         Commands::Links { note } => commands::parse::links(&vault, &note),

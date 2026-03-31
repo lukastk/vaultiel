@@ -146,3 +146,64 @@ pub fn search(vault: &Vault, query: &str) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(&results).unwrap());
     Ok(())
 }
+
+pub fn all_frontmatter(
+    vault: &Vault,
+    pattern: Option<&str>,
+    has_key: Option<&str>,
+    where_filter: Option<&str>,
+) -> Result<()> {
+    let notes = match pattern {
+        Some(p) => vault.list_notes_matching(p)?,
+        None => vault.list_notes()?,
+    };
+
+    // Parse where filter: "key=value"
+    let where_kv = where_filter.and_then(|w| {
+        let mut parts = w.splitn(2, '=');
+        let k = parts.next()?;
+        let v = parts.next()?;
+        Some((k.to_string(), v.to_string()))
+    });
+
+    for path in &notes {
+        let n = match vault.load_note(path) {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        let fm = match n.frontmatter() {
+            Ok(Some(fm)) => fm,
+            _ => continue,
+        };
+
+        // Filter: has-key
+        if let Some(key) = has_key {
+            if fm.get(key).is_none() {
+                continue;
+            }
+        }
+
+        // Filter: where key=value
+        if let Some((ref k, ref v)) = where_kv {
+            match fm.get(k) {
+                Some(val) => {
+                    let val_str = match val {
+                        serde_yaml::Value::String(s) => s.clone(),
+                        other => serde_json::to_string(other).unwrap_or_default(),
+                    };
+                    if val_str != *v {
+                        continue;
+                    }
+                }
+                None => continue,
+            }
+        }
+
+        let entry = serde_json::json!({
+            "path": path.display().to_string(),
+            "frontmatter": fm,
+        });
+        println!("{}", serde_json::to_string(&entry).unwrap());
+    }
+    Ok(())
+}
