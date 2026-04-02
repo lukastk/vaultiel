@@ -5,13 +5,13 @@ use crate::types::InlineProperty;
 use regex::Regex;
 use std::sync::LazyLock;
 
-// Inline property pattern: [key::value]
-// Key can contain word characters and hyphens
+// Inline property pattern: [key::value] or [ key :: value ]
+// Key can contain word characters and hyphens (optional surrounding spaces)
 // Value can contain most characters except ], but can include ]] for wikilinks
 static INLINE_PROPERTY: LazyLock<Regex> = LazyLock::new(|| {
     // Value pattern: [^\]]* matches non-] chars, then (?:\]\][^\]]*)* allows ]] followed by non-] chars
     // This handles wikilinks like [[Note]] inside the value
-    Regex::new(r"\[([\w-]+)::([^\]]*(?:\]\][^\]]*)*)\]").unwrap()
+    Regex::new(r"\[\s*([\w-]+)\s*::\s*([^\]]*(?:\]\][^\]]*)*)\s*\]").unwrap()
 });
 
 /// Parse all inline properties from content.

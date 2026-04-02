@@ -7,10 +7,10 @@
 import type { InlineProperty } from "../types.js";
 import { findCodeBlockRanges, isInCodeBlock } from "./code-block.js";
 
-// Inline property: [key::value]
-// Key: word chars and hyphens
+// Inline property: [key::value] or [ key :: value ]
+// Key: word chars and hyphens (optional surrounding spaces)
 // Value: allows ]] inside (for wikilinks like [[Note]])
-const INLINE_PROPERTY = /\[([\w-]+)::([^\]]*(?:\]\][^\]]*)*)\]/g;
+const INLINE_PROPERTY = /\[\s*([\w-]+)\s*::\s*([^\]]*(?:\]\][^\]]*)*)\s*\]/g;
 
 /** Parse all inline properties from content. */
 export function parseInlineProperties(content: string): InlineProperty[] {
