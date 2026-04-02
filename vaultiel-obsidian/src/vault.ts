@@ -190,7 +190,38 @@ export class Vault {
     }));
   }
 
-  /** Get incoming links to a note. */
+  /** Get body-only incoming links (backlinks from metadataCache, no frontmatter scan). */
+  getIncomingLinksBody(path: string): LinkRef[] {
+    const file = getFile(this.app, path);
+    const refs: LinkRef[] = [];
+    const seen = new Set<string>();
+
+    const backlinks = (this.app.metadataCache as any).getBacklinksForFile(file);
+    if (backlinks?.data) {
+      const data: Map<string, LinkCache[]> = backlinks.data;
+      for (const [sourcePath, linkCaches] of data) {
+        for (const lc of linkCaches) {
+          if (!lc?.position) continue;
+          const key = `${sourcePath}:${lc.position.start.line}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          refs.push({
+            from: sourcePath,
+            line: lc.position.start.line + 1,
+            context: lc.displayText || lc.link,
+            alias: lc.displayText !== lc.link ? lc.displayText : undefined,
+            heading: undefined,
+            blockId: undefined,
+            embed: false,
+          });
+        }
+      }
+    }
+
+    return refs;
+  }
+
+  /** Get incoming links to a note (body backlinks + frontmatter scan). */
   getIncomingLinks(path: string): LinkRef[] {
     const file = getFile(this.app, path);
     const refs: LinkRef[] = [];
