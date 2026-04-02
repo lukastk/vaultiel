@@ -193,24 +193,53 @@ export class Vault {
   /** Get incoming links to a note. */
   getIncomingLinks(path: string): LinkRef[] {
     const file = getFile(this.app, path);
-    // getBacklinksForFile returns a SearchResult-like object
-    const backlinks = (this.app.metadataCache as any).getBacklinksForFile(file);
-    if (!backlinks?.data) return [];
-
     const refs: LinkRef[] = [];
-    const data: Map<string, LinkCache[]> = backlinks.data;
+    const seen = new Set<string>(); // dedupe key: "sourcePath:line"
 
-    for (const [sourcePath, linkCaches] of data) {
-      for (const lc of linkCaches) {
-        if (!lc?.position) continue; // skip entries without position data
+    // Body backlinks from Obsidian's metadataCache
+    const backlinks = (this.app.metadataCache as any).getBacklinksForFile(file);
+    if (backlinks?.data) {
+      const data: Map<string, LinkCache[]> = backlinks.data;
+      for (const [sourcePath, linkCaches] of data) {
+        for (const lc of linkCaches) {
+          if (!lc?.position) continue;
+          const key = `${sourcePath}:${lc.position.start.line}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          refs.push({
+            from: sourcePath,
+            line: lc.position.start.line + 1,
+            context: lc.displayText || lc.link,
+            alias: lc.displayText !== lc.link ? lc.displayText : undefined,
+            heading: undefined,
+            blockId: undefined,
+            embed: false,
+          });
+        }
+      }
+    }
+
+    // Frontmatter links (not included in Obsidian's backlinks API)
+    const targetBasename = file.basename;
+    for (const otherFile of this.app.vault.getMarkdownFiles()) {
+      if (otherFile.path === path) continue;
+      const otherCache = this.app.metadataCache.getFileCache(otherFile);
+      if (!otherCache?.frontmatterLinks) continue;
+      for (const fl of (otherCache as any).frontmatterLinks) {
+        const resolved = this.app.metadataCache.getFirstLinkpathDest(fl.link, otherFile.path);
+        if (resolved?.path !== path) continue;
+        const fmKey = (fl.key as string).replace(/\.\d+$/, ""); // "parents.0" → "parents"
+        const key = `${otherFile.path}:fm:${fl.key}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         refs.push({
-          from: sourcePath,
-          line: lc.position.start.line + 1,
-          context: lc.displayText || lc.link,
-          alias: lc.displayText !== lc.link ? lc.displayText : undefined,
-          heading: undefined, // Would need to parse from lc.link
+          from: otherFile.path,
+          line: 0, // frontmatter, no specific line
+          context: `frontmatter:${fmKey}`,
+          alias: fl.displayText !== fl.link ? fl.displayText : undefined,
+          heading: undefined,
           blockId: undefined,
-          embed: false, // Backlinks API doesn't distinguish
+          embed: false,
         });
       }
     }
@@ -225,12 +254,10 @@ export class Vault {
     if (!cache) return [];
 
     const refs: LinkRef[] = [];
-    const resolved = this.app.metadataCache.resolvedLinks[file.path] ?? {};
 
+    // Body links
     if (cache.links) {
       for (const lc of cache.links) {
-        // Try to find the resolved target
-        const targetPath = this.app.metadataCache.getFirstLinkpathDest(lc.link, file.path)?.path;
         refs.push({
           from: file.path,
           line: lc.position.start.line + 1,
@@ -243,6 +270,7 @@ export class Vault {
       }
     }
 
+    // Embeds
     if (cache.embeds) {
       for (const ec of cache.embeds) {
         refs.push({
@@ -253,6 +281,22 @@ export class Vault {
           heading: undefined,
           blockId: undefined,
           embed: true,
+        });
+      }
+    }
+
+    // Frontmatter links
+    if ((cache as any).frontmatterLinks) {
+      for (const fl of (cache as any).frontmatterLinks) {
+        const fmKey = (fl.key as string).replace(/\.\d+$/, "");
+        refs.push({
+          from: file.path,
+          line: 0,
+          context: `frontmatter:${fmKey}`,
+          alias: fl.displayText !== fl.link ? fl.displayText : undefined,
+          heading: undefined,
+          blockId: undefined,
+          embed: false,
         });
       }
     }
