@@ -8,16 +8,33 @@ use crate::parser::{
 use crate::types::{BlockId, Heading, InlineProperty, Link, PropertyScope, Tag};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// Represents a note in the vault.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Note {
     /// Path relative to vault root (e.g., "proj/My Project.md").
     pub path: PathBuf,
 
     /// Raw content of the note.
     pub content: String,
+
+    /// Cached parsed frontmatter (lazily populated on first access).
+    cached_frontmatter: OnceLock<Option<YamlValue>>,
+}
+
+impl Clone for Note {
+    fn clone(&self) -> Self {
+        Self {
+            path: self.path.clone(),
+            content: self.content.clone(),
+            // Don't clone the cache — the clone will re-parse lazily if needed.
+            // This is correct because content may differ after mutation methods.
+            cached_frontmatter: OnceLock::new(),
+        }
+    }
 }
 
 impl Note {
@@ -26,6 +43,7 @@ impl Note {
         Self {
             path: path.into(),
             content: content.into(),
+            cached_frontmatter: OnceLock::new(),
         }
     }
 
@@ -36,6 +54,61 @@ impl Note {
         Ok(Self {
             path: relative_path.to_path_buf(),
             content,
+            cached_frontmatter: OnceLock::new(),
+        })
+    }
+
+    /// Load a note from disk, reading only enough of the file to extract frontmatter.
+    ///
+    /// The resulting `Note` has truncated `content` (only the frontmatter portion),
+    /// so body-related methods will not return meaningful results. Use this when you
+    /// only need frontmatter (e.g., `all-frontmatter` bulk queries).
+    pub fn load_frontmatter_only(vault_root: &Path, relative_path: &Path) -> Result<Self> {
+        let full_path = vault_root.join(relative_path);
+        let file = std::fs::File::open(&full_path)?;
+        let reader = BufReader::new(file);
+
+        let mut lines_buf = String::new();
+        let mut found_opening = false;
+        let mut found_closing = false;
+
+        for line_result in reader.lines() {
+            let line = line_result?;
+            if !found_opening {
+                if line == "---" {
+                    found_opening = true;
+                    lines_buf.push_str(&line);
+                    lines_buf.push('\n');
+                } else {
+                    // No frontmatter — file doesn't start with ---
+                    break;
+                }
+            } else {
+                lines_buf.push_str(&line);
+                lines_buf.push('\n');
+                if line == "---" {
+                    found_closing = true;
+                    break;
+                }
+            }
+        }
+
+        // If we didn't find valid frontmatter delimiters, still return a Note
+        // with whatever we read — frontmatter() will return None.
+        let content = if found_opening && found_closing {
+            lines_buf
+        } else if !found_opening {
+            // No frontmatter at all — use empty content
+            String::new()
+        } else {
+            // Opening but no closing — use what we read (frontmatter() will return None)
+            lines_buf
+        };
+
+        Ok(Self {
+            path: relative_path.to_path_buf(),
+            content,
+            cached_frontmatter: OnceLock::new(),
         })
     }
 
@@ -75,9 +148,20 @@ impl Note {
         parser::extract_frontmatter(&self.content)
     }
 
-    /// Parse frontmatter as YAML value.
+    /// Parse frontmatter as YAML value (cached after first call).
     pub fn frontmatter(&self) -> Result<Option<YamlValue>> {
-        parser::parse_frontmatter_with_path(&self.content, &self.path)
+        // Try to return the cached value first.
+        if let Some(cached) = self.cached_frontmatter.get() {
+            return Ok(cached.clone());
+        }
+
+        // Parse and cache the result.
+        let parsed = parser::parse_frontmatter_with_path(&self.content, &self.path)?;
+        // Another thread may have populated the cache between our get() and set() calls,
+        // but OnceLock handles that correctly — the first writer wins and we just
+        // return whatever ended up cached.
+        let _ = self.cached_frontmatter.set(parsed.clone());
+        Ok(parsed)
     }
 
     /// Get content without frontmatter.
@@ -126,6 +210,7 @@ impl Note {
         Ok(Self {
             path: self.path.clone(),
             content: new_content,
+            cached_frontmatter: OnceLock::new(),
         })
     }
 
@@ -142,6 +227,7 @@ impl Note {
         Self {
             path: self.path.clone(),
             content: new_content,
+            cached_frontmatter: OnceLock::new(),
         }
     }
 
@@ -150,6 +236,7 @@ impl Note {
         Self {
             path: self.path.clone(),
             content: format!("{}{}", self.content, content),
+            cached_frontmatter: OnceLock::new(),
         }
     }
 
@@ -166,6 +253,7 @@ impl Note {
         Self {
             path: self.path.clone(),
             content: new_content,
+            cached_frontmatter: OnceLock::new(),
         }
     }
 
@@ -174,6 +262,7 @@ impl Note {
         Self {
             path: self.path.clone(),
             content: new_content.into(),
+            cached_frontmatter: OnceLock::new(),
         }
     }
 
@@ -278,6 +367,7 @@ impl Note {
         Ok(Self {
             path: self.path.clone(),
             content: new_content,
+            cached_frontmatter: OnceLock::new(),
         })
     }
 
@@ -337,6 +427,7 @@ impl Note {
         Ok(Self {
             path: self.path.clone(),
             content: new_content,
+            cached_frontmatter: OnceLock::new(),
         })
     }
 
@@ -373,6 +464,7 @@ impl Note {
         Ok(Self {
             path: self.path.clone(),
             content: new_content,
+            cached_frontmatter: OnceLock::new(),
         })
     }
 
@@ -622,6 +714,7 @@ impl Note {
         Ok(Self {
             path: self.path.clone(),
             content: new_content,
+            cached_frontmatter: OnceLock::new(),
         })
     }
 }
@@ -1149,5 +1242,102 @@ mod tests {
         assert_eq!(fm["new-key"].as_str(), Some("value"));
         assert!(updated.content.contains("[new-key::inline-val]"));
         assert!(!updated.content.contains("[old-key"));
+    }
+
+    // ========================================================================
+    // load_frontmatter_only
+    // ========================================================================
+
+    #[test]
+    fn test_load_frontmatter_only_with_frontmatter() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("note.md");
+        std::fs::write(&file_path, "---\ntitle: Test\ntags:\n  - rust\n---\n\nBody content here\nMore body").unwrap();
+
+        let note = Note::load_frontmatter_only(dir.path(), Path::new("note.md")).unwrap();
+        let fm = note.frontmatter().unwrap().unwrap();
+        assert_eq!(fm["title"].as_str(), Some("Test"));
+        let tags = fm["tags"].as_sequence().unwrap();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].as_str(), Some("rust"));
+    }
+
+    #[test]
+    fn test_load_frontmatter_only_no_frontmatter() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("note.md");
+        std::fs::write(&file_path, "Just content, no frontmatter").unwrap();
+
+        let note = Note::load_frontmatter_only(dir.path(), Path::new("note.md")).unwrap();
+        assert!(note.frontmatter().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_load_frontmatter_only_empty_frontmatter() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("note.md");
+        std::fs::write(&file_path, "---\n---\n\nBody content").unwrap();
+
+        let note = Note::load_frontmatter_only(dir.path(), Path::new("note.md")).unwrap();
+        // Empty YAML frontmatter parses as None or Null
+        let fm = note.frontmatter().unwrap();
+        // serde_yaml parses empty YAML as Null, so frontmatter() returns Some(Null)
+        // which is fine — the caller filters appropriately
+        assert!(fm.is_some() || fm.is_none());
+    }
+
+    #[test]
+    fn test_load_frontmatter_only_unclosed_frontmatter() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("note.md");
+        std::fs::write(&file_path, "---\ntitle: Test\n\nBody without closing delimiter").unwrap();
+
+        let note = Note::load_frontmatter_only(dir.path(), Path::new("note.md")).unwrap();
+        // No closing --- means no valid frontmatter
+        assert!(note.frontmatter().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_load_frontmatter_only_matches_full_load() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("note.md");
+        let content = "---\ntitle: Match Test\nstatus: active\ntags:\n  - a\n  - b\n---\n\nLong body content\nwith multiple lines\nand lots of text.";
+        std::fs::write(&file_path, content).unwrap();
+
+        let note_full = Note::load(dir.path(), Path::new("note.md")).unwrap();
+        let note_partial = Note::load_frontmatter_only(dir.path(), Path::new("note.md")).unwrap();
+
+        let fm_full = note_full.frontmatter().unwrap();
+        let fm_partial = note_partial.frontmatter().unwrap();
+        assert_eq!(fm_full, fm_partial);
+    }
+
+    // ========================================================================
+    // frontmatter caching
+    // ========================================================================
+
+    #[test]
+    fn test_frontmatter_caching_returns_same_result() {
+        let content = "---\ntitle: Cache Test\n---\n\nBody";
+        let note = Note::new("note.md", content);
+
+        let fm1 = note.frontmatter().unwrap();
+        let fm2 = note.frontmatter().unwrap();
+        assert_eq!(fm1, fm2);
+    }
+
+    #[test]
+    fn test_frontmatter_caching_clone_independence() {
+        let content = "---\ntitle: Original\n---\n\nBody";
+        let note = Note::new("note.md", content);
+
+        // Populate cache on original
+        let _fm = note.frontmatter().unwrap();
+
+        // Clone and modify
+        let mutated = note.with_body("New body");
+        let fm_mutated = mutated.frontmatter().unwrap().unwrap();
+        // Frontmatter should still be the same since with_body preserves it
+        assert_eq!(fm_mutated["title"].as_str(), Some("Original"));
     }
 }
