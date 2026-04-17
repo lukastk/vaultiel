@@ -261,8 +261,8 @@ export function parseTasks(
     const lineNum = lineIdx + 1;
     const line = lines[lineIdx]!;
 
-    // Skip lines inside code blocks
-    if (codeRanges.some((r) => lineNum >= r.startLine && lineNum <= r.endLine)) continue;
+    // Skip lines inside fenced code blocks (not inline code spans)
+    if (codeRanges.some((r) => r.isFenced && lineNum >= r.startLine && lineNum <= r.endLine)) continue;
 
     const match = TASK_REGEX.exec(line);
     if (!match) {
@@ -347,8 +347,8 @@ export function parseTaskTrees(
     const lineNum = lineIdx + 1;
     const line = lines[lineIdx]!;
 
-    // Skip lines inside code blocks
-    if (codeRanges.some((r) => lineNum >= r.startLine && lineNum <= r.endLine)) continue;
+    // Skip lines inside fenced code blocks (not inline code spans)
+    if (codeRanges.some((r) => r.isFenced && lineNum >= r.startLine && lineNum <= r.endLine)) continue;
 
     // Try task regex first
     const taskMatch = TASK_REGEX.exec(line);

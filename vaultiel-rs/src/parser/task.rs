@@ -51,8 +51,8 @@ pub fn parse_tasks(content: &str, file_path: &PathBuf, config: &TaskConfig) -> V
     for (line_idx, line) in lines.iter().enumerate() {
         let line_num = line_idx + 1;
 
-        // Skip lines inside code blocks
-        if code_ranges.iter().any(|range| line_num >= range.start_line && line_num <= range.end_line) {
+        // Skip lines inside fenced code blocks (not inline code spans)
+        if code_ranges.iter().any(|range| range.is_fenced && line_num >= range.start_line && line_num <= range.end_line) {
             continue;
         }
 
@@ -431,8 +431,8 @@ pub fn parse_task_trees(content: &str, file_path: &PathBuf, config: &TaskConfig)
     for (line_idx, line) in lines.iter().enumerate() {
         let line_num = line_idx + 1;
 
-        // Skip lines inside code blocks
-        if code_ranges.iter().any(|range| line_num >= range.start_line && line_num <= range.end_line) {
+        // Skip lines inside fenced code blocks (not inline code spans)
+        if code_ranges.iter().any(|range| range.is_fenced && line_num >= range.start_line && line_num <= range.end_line) {
             continue;
         }
 
@@ -1208,5 +1208,16 @@ mod tests {
             &config,
         );
         assert_eq!(result, "* [x] Star task");
+    }
+
+    #[test]
+    fn test_parse_task_with_inline_backticks() {
+        let content = "- [+] Open the `stocktake` workspace\n- [+] Another task";
+        let path = PathBuf::from("test.md");
+        let tasks = parse_tasks(content, &path, &TaskConfig::empty());
+
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].description, "Open the `stocktake` workspace");
+        assert_eq!(tasks[1].description, "Another task");
     }
 }
