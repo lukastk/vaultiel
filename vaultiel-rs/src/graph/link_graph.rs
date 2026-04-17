@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::resolution::resolve_link_target;
+use super::resolution::{resolve_link_target_indexed, build_filename_index, FilenameIndex};
 
 /// Information about a link with its context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,9 +58,15 @@ impl LinkGraph {
     pub fn build(vault: &Vault) -> Result<Self> {
         let mut graph = LinkGraph::default();
 
-        // First pass: collect all aliases
-        for path in vault.list_notes()? {
-            if let Ok(note) = vault.load_note(&path) {
+        // Single pass: collect aliases and raw content, then build links.
+        // We need aliases before resolving links, so we read all notes once,
+        // extract aliases first, then process links from the cached content.
+        let notes = vault.list_notes()?;
+        let mut contents: Vec<(PathBuf, String)> = Vec::with_capacity(notes.len());
+
+        for path in &notes {
+            if let Ok(note) = vault.load_note(path) {
+                // Extract aliases from frontmatter
                 if let Ok(Some(fm)) = parse_frontmatter(&note.content) {
                     if let Some(aliases) = fm.get("aliases") {
                         if let Some(arr) = aliases.as_sequence() {
@@ -72,40 +78,41 @@ impl LinkGraph {
                                 }
                             }
                         } else if let Some(alias_str) = aliases.as_str() {
-                            // Single alias as string
                             graph
                                 .aliases
                                 .insert(alias_str.to_lowercase(), path.clone());
                         }
                     }
                 }
+                contents.push((path.clone(), note.content));
             }
         }
 
-        // Second pass: build link graph
-        for path in vault.list_notes()? {
-            if let Ok(note) = vault.load_note(&path) {
-                let links = Self::extract_links_with_context(&note.content, vault, &graph.aliases);
+        // Build filename index once for fast link resolution
+        let filename_index = build_filename_index(vault);
 
-                // Build incoming index
-                for link_info in &links {
-                    let target_key = normalize_target(&link_info.link.target);
+        // Build link graph from cached content (no second disk pass)
+        for (path, content) in &contents {
+            let links = Self::extract_links_with_context(content, vault, &graph.aliases, &filename_index);
 
-                    let incoming_link = IncomingLink {
-                        from: path.clone(),
-                        link: link_info.link.clone(),
-                        context: link_info.context.clone(),
-                    };
+            // Build incoming index
+            for link_info in &links {
+                let target_key = normalize_target(&link_info.link.target);
 
-                    graph
-                        .incoming
-                        .entry(target_key)
-                        .or_default()
-                        .push(incoming_link);
-                }
+                let incoming_link = IncomingLink {
+                    from: path.clone(),
+                    link: link_info.link.clone(),
+                    context: link_info.context.clone(),
+                };
 
-                graph.outgoing.insert(path, links);
+                graph
+                    .incoming
+                    .entry(target_key)
+                    .or_default()
+                    .push(incoming_link);
             }
+
+            graph.outgoing.insert(path.clone(), links);
         }
 
         Ok(graph)
@@ -116,6 +123,7 @@ impl LinkGraph {
         content: &str,
         vault: &Vault,
         aliases: &HashMap<String, PathBuf>,
+        filename_index: &FilenameIndex,
     ) -> Vec<LinkInfo> {
         let mut links = Vec::new();
 
@@ -123,7 +131,7 @@ impl LinkGraph {
         let body_links = parse_all_links(content);
         for link in body_links {
             let context = Self::determine_context(content, &link);
-            let resolved_path = resolve_link_target(&link.target, vault, aliases);
+            let resolved_path = resolve_link_target_indexed(&link.target, vault, aliases, Some(filename_index));
 
             links.push(LinkInfo {
                 link,
@@ -134,7 +142,7 @@ impl LinkGraph {
 
         // Parse links from frontmatter string values
         if let Ok(Some(fm)) = parse_frontmatter(content) {
-            Self::extract_frontmatter_links(&fm, vault, aliases, &mut links, String::new());
+            Self::extract_frontmatter_links(&fm, vault, aliases, filename_index, &mut links, String::new());
         }
 
         links
@@ -145,6 +153,7 @@ impl LinkGraph {
         value: &serde_yaml::Value,
         vault: &Vault,
         aliases: &HashMap<String, PathBuf>,
+        filename_index: &FilenameIndex,
         links: &mut Vec<LinkInfo>,
         key_path: String,
     ) {
@@ -157,7 +166,7 @@ impl LinkGraph {
                     // (accurate line tracking in frontmatter is complex)
                     link.line = 0;
 
-                    let resolved_path = resolve_link_target(&link.target, vault, aliases);
+                    let resolved_path = resolve_link_target_indexed(&link.target, vault, aliases, Some(filename_index));
 
                     let context = if key_path.is_empty() {
                         LinkContext::Body
@@ -180,7 +189,7 @@ impl LinkGraph {
                         let fm_links = parse_all_links(s);
                         for mut link in fm_links {
                             link.line = 0;
-                            let resolved_path = resolve_link_target(&link.target, vault, aliases);
+                            let resolved_path = resolve_link_target_indexed(&link.target, vault, aliases, Some(filename_index));
 
                             let context = LinkContext::FrontmatterList {
                                 key: key_path.clone(),
@@ -198,6 +207,7 @@ impl LinkGraph {
                             item,
                             vault,
                             aliases,
+                            filename_index,
                             links,
                             format!("{}[{}]", key_path, i),
                         );
@@ -212,7 +222,7 @@ impl LinkGraph {
                         } else {
                             format!("{}.{}", key_path, key)
                         };
-                        Self::extract_frontmatter_links(v, vault, aliases, links, new_path);
+                        Self::extract_frontmatter_links(v, vault, aliases, filename_index, links, new_path);
                     }
                 }
             }

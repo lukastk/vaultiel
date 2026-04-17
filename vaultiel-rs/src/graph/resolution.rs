@@ -18,6 +18,35 @@ pub fn resolve_link_target(
     vault: &Vault,
     aliases: &HashMap<String, PathBuf>,
 ) -> Option<PathBuf> {
+    resolve_link_target_indexed(target, vault, aliases, None)
+}
+
+/// Pre-computed index of lowercase filename stems to note paths.
+/// Build once via `build_filename_index()` and pass to repeated calls.
+pub type FilenameIndex = HashMap<String, PathBuf>;
+
+/// Build a filename index for fast case-insensitive resolution.
+pub fn build_filename_index(vault: &Vault) -> FilenameIndex {
+    let mut index = HashMap::new();
+    if let Ok(notes) = vault.list_notes() {
+        for note_path in notes {
+            if let Some(stem) = note_path.file_stem() {
+                let key = stem.to_string_lossy().to_lowercase();
+                index.insert(key, note_path);
+            }
+        }
+    }
+    index
+}
+
+/// Resolve a link target using an optional pre-built filename index.
+/// If `filename_index` is None, falls back to scanning vault.list_notes().
+pub fn resolve_link_target_indexed(
+    target: &str,
+    vault: &Vault,
+    aliases: &HashMap<String, PathBuf>,
+    filename_index: Option<&FilenameIndex>,
+) -> Option<PathBuf> {
     // Remove any heading or block reference for resolution
     let target = target.split('#').next().unwrap_or(target);
 
@@ -43,16 +72,23 @@ pub fn resolve_link_target(
     }
 
     // 2. Try filename match (case-insensitive)
-    if let Ok(notes) = vault.list_notes() {
-        // First try exact filename match
-        let target_stem = target_lower
-            .strip_suffix(".md")
-            .unwrap_or(&target_lower);
+    let target_stem = target_lower
+        .strip_suffix(".md")
+        .unwrap_or(&target_lower);
 
-        for note_path in &notes {
-            if let Some(stem) = note_path.file_stem() {
-                if stem.to_string_lossy().to_lowercase() == target_stem {
-                    return Some(note_path.clone());
+    if let Some(index) = filename_index {
+        // Fast path: use pre-built index
+        if let Some(path) = index.get(target_stem) {
+            return Some(path.clone());
+        }
+    } else {
+        // Slow path: scan vault
+        if let Ok(notes) = vault.list_notes() {
+            for note_path in &notes {
+                if let Some(stem) = note_path.file_stem() {
+                    if stem.to_string_lossy().to_lowercase() == target_stem {
+                        return Some(note_path.clone());
+                    }
                 }
             }
         }

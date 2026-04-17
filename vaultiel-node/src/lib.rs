@@ -265,6 +265,7 @@ fn task_child_to_json(child: &vaultiel::TaskChild) -> serde_json::Value {
 pub struct JsVault {
     vault: Vault,
     task_config: TaskConfig,
+    link_graph: std::cell::RefCell<Option<LinkGraph>>,
 }
 
 #[napi]
@@ -278,7 +279,7 @@ impl JsVault {
             .as_ref()
             .map(js_config_to_rust)
             .unwrap_or_else(TaskConfig::empty);
-        Ok(Self { vault, task_config })
+        Ok(Self { vault, task_config, link_graph: std::cell::RefCell::new(None) })
     }
 
     /// Get the vault root path.
@@ -346,6 +347,30 @@ impl JsVault {
             Ok(None) => Ok(None),
             Err(e) => Err(Error::from_reason(e.to_string())),
         }
+    }
+
+    /// Get all notes' frontmatter in one bulk read.
+    /// Returns a JSON string: array of {"path": "...", "frontmatter": {...}}.
+    #[napi]
+    pub fn get_all_frontmatter(&self) -> Result<String> {
+        let notes = self.vault.list_notes()
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        let mut entries = Vec::with_capacity(notes.len());
+        for path in &notes {
+            if let Ok(note) = self.vault.load_note(path) {
+                if let Ok(Some(fm)) = note.frontmatter() {
+                    let entry = serde_json::json!({
+                        "path": path.to_string_lossy(),
+                        "frontmatter": fm,
+                    });
+                    entries.push(entry);
+                }
+            }
+        }
+
+        serde_json::to_string(&entries)
+            .map_err(|e| Error::from_reason(e.to_string()))
     }
 
     /// Create a new note.
@@ -586,7 +611,7 @@ impl JsVault {
         let note = self.vault.load_note(&note_path)
             .map_err(|e| Error::from_reason(e.to_string()))?;
         let new_content = note.content.replacen(&pattern, &replacement, 1);
-        let updated = vaultiel::Note { path: note.path, content: new_content };
+        let updated = vaultiel::Note::new(note.path, new_content);
         updated.save(&self.vault.root)
             .map_err(|e| Error::from_reason(e.to_string()))
     }
@@ -845,12 +870,31 @@ impl JsVault {
     // Link Graph
     // ========================================================================
 
+    /// Ensure the link graph is built and cached. Subsequent calls are instant.
+    #[napi]
+    pub fn ensure_link_graph(&self) -> Result<()> {
+        let mut cached = self.link_graph.borrow_mut();
+        if cached.is_none() {
+            let graph = LinkGraph::build(&self.vault)
+                .map_err(|e| Error::from_reason(e.to_string()))?;
+            *cached = Some(graph);
+        }
+        Ok(())
+    }
+
+    /// Invalidate the cached link graph so the next query rebuilds it.
+    #[napi]
+    pub fn invalidate_link_graph(&self) {
+        *self.link_graph.borrow_mut() = None;
+    }
+
     /// Get incoming links to a note.
     #[napi]
     pub fn get_incoming_links(&self, path: String) -> Result<Vec<JsLinkRef>> {
         let note_path = self.vault.normalize_note_path(&path);
-        let graph = LinkGraph::build(&self.vault)
-            .map_err(|e| Error::from_reason(e.to_string()))?;
+        self.ensure_link_graph()?;
+        let cached = self.link_graph.borrow();
+        let graph = cached.as_ref().unwrap();
 
         let incoming = graph.get_incoming(&note_path);
         Ok(incoming
@@ -871,8 +915,9 @@ impl JsVault {
     #[napi]
     pub fn get_outgoing_links(&self, path: String) -> Result<Vec<JsLinkRef>> {
         let note_path = self.vault.normalize_note_path(&path);
-        let graph = LinkGraph::build(&self.vault)
-            .map_err(|e| Error::from_reason(e.to_string()))?;
+        self.ensure_link_graph()?;
+        let cached = self.link_graph.borrow();
+        let graph = cached.as_ref().unwrap();
 
         let outgoing = graph.get_outgoing(&note_path);
         Ok(outgoing
