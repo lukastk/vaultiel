@@ -1,5 +1,3 @@
-# Claude Instructions for Vaultiel
-
 ## Project Overview
 
 Vaultiel is a Rust library for programmatically interacting with Obsidian-style vaults. It provides parsing, vault I/O, link graphs, task extraction, and metadata management. Consumed via napi-rs bindings (`vaultiel-node`) and a TypeScript Obsidian adapter (`vaultiel-obsidian`).
@@ -8,7 +6,7 @@ Vaultiel is a Rust library for programmatically interacting with Obsidian-style 
 
 ```
 vaultiel/
-├── CLAUDE.md             # This file
+├── AGENTS.md             # This file
 ├── fixtures/             # Shared test vaults (used by all language bindings)
 │   ├── minimal/          # Single basic note
 │   ├── links/            # Notes with links, aliases, embeds, orphans
