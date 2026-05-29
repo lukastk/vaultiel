@@ -1,6 +1,6 @@
 ## Project Overview
 
-Vaultiel is a Rust library for programmatically interacting with Obsidian-style vaults. It provides parsing, vault I/O, link graphs, task extraction, and metadata management. Consumed via napi-rs bindings (`vaultiel-node`) and a TypeScript Obsidian adapter (`vaultiel-obsidian`).
+Vaultiel is a Rust toolkit for programmatically interacting with Obsidian-style vaults. The core crate (`vaultiel-rs`) provides parsing, vault I/O, link graphs, task extraction, search, and metadata management. It is consumed via napi-rs bindings (`vaultiel-node`), a TypeScript Obsidian adapter (`vaultiel-obsidian`), and a standalone CLI crate (`vaultiel-cli`) that builds the `vaultiel` binary (~40 subcommands for read/parse/graph/write/metadata operations).
 
 ## Repository Structure
 
@@ -11,20 +11,28 @@ vaultiel/
 │   ├── minimal/          # Single basic note
 │   ├── links/            # Notes with links, aliases, embeds, orphans
 │   ├── unicode/          # Japanese and emoji filenames/content
-│   └── frontmatter/      # Various frontmatter structures
-├── vaultiel-rs/          # Rust core library (no CLI)
+│   ├── frontmatter/      # Various frontmatter structures
+│   ├── tasks/            # Notes with tasks and task hierarchies
+│   └── obako/            # Obako-flavored vault fixture
+├── vaultiel-rs/          # Rust core library
 │   ├── Cargo.toml
 │   ├── src/
 │   │   ├── lib.rs        # Library exports
 │   │   ├── parser/       # Parsing logic (frontmatter, wikilinks, tags, tasks, etc.)
 │   │   ├── graph/        # Link graph construction and resolution
+│   │   ├── search/       # Query parser + matcher (subsequence/fuzzy/exact/regex)
 │   │   ├── vault.rs      # Vault operations
 │   │   ├── note.rs       # Note struct and methods
 │   │   ├── config.rs     # TaskConfig, EmojiFieldDef, EmojiValueType
 │   │   ├── metadata.rs   # Vaultiel metadata (UUID-based note identification)
 │   │   ├── error.rs      # Error types
 │   │   └── types.rs      # Shared types (Link, Tag, Task, etc.)
-│   └── tests/            # Rust fixture-based tests
+│   │                     # (tests are inline #[cfg(test)] modules, no tests/ dir)
+├── vaultiel-cli/         # Rust CLI crate — builds the `vaultiel` binary
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs       # Clap CLI definition + dispatch
+│       └── commands/     # read.rs, parse.rs, graph.rs, write.rs, meta.rs
 ├── vaultiel-node/        # @vaultiel/node (napi-rs bindings for Node.js)
 └── vaultiel-obsidian/    # @vaultiel/obsidian (TypeScript, Obsidian APIs)
 ```
