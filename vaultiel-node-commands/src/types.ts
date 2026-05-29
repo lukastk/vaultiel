@@ -4,6 +4,12 @@ export interface SubcommandArg {
   name: string;
   description: string;
   required: boolean;
+  /**
+   * If true, a value of "-" for this argument is replaced with the contents of
+   * stdin before the subcommand executes (matching the Rust `vaultiel` CLI's
+   * `resolve_content`). Without this, "-" would be written literally.
+   */
+  stdin?: boolean;
 }
 
 export interface SubcommandOption {

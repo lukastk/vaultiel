@@ -459,7 +459,7 @@ export const vaultSubcommands: CLISubcommand[] = [
     group: "Write",
     args: [
       { name: "note", description: "Note path", required: true },
-      { name: "content", description: 'Content (use "-" for stdin)', required: true },
+      { name: "content", description: 'Content (use "-" for stdin)', required: true, stdin: true },
     ],
     options: [],
     execute(vault, args) {
@@ -504,7 +504,7 @@ export const vaultSubcommands: CLISubcommand[] = [
     group: "Write",
     args: [
       { name: "note", description: "Note path", required: true },
-      { name: "content", description: 'New body content (use "-" for stdin)', required: true },
+      { name: "content", description: 'New body content (use "-" for stdin)', required: true, stdin: true },
     ],
     options: [],
     execute(vault, args) {
@@ -519,7 +519,7 @@ export const vaultSubcommands: CLISubcommand[] = [
     group: "Write",
     args: [
       { name: "note", description: "Note path", required: true },
-      { name: "content", description: 'Full content (use "-" for stdin)', required: true },
+      { name: "content", description: 'Full content (use "-" for stdin)', required: true, stdin: true },
     ],
     options: [],
     execute(vault, args) {
@@ -565,7 +565,7 @@ export const vaultSubcommands: CLISubcommand[] = [
     group: "Write",
     args: [
       { name: "note", description: "Note path", required: true },
-      { name: "content", description: 'Content to append (use "-" for stdin)', required: true },
+      { name: "content", description: 'Content to append (use "-" for stdin)', required: true, stdin: true },
     ],
     options: [],
     execute(vault, args) {
