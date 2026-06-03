@@ -1,6 +1,6 @@
 ## Project Overview
 
-Vaultiel is a Rust toolkit for programmatically interacting with Obsidian-style vaults. The core crate (`vaultiel-rs`) provides parsing, vault I/O, link graphs, task extraction, search, and metadata management. It is consumed via napi-rs bindings (`vaultiel-node`), a TypeScript Obsidian adapter (`vaultiel-obsidian`), and a standalone CLI crate (`vaultiel-cli`) that builds the `vaultiel` binary (~40 subcommands for read/parse/graph/write/metadata operations).
+Vaultiel is a Rust toolkit for programmatically interacting with Obsidian-style vaults. The core crate (`vaultiel-rs`) provides parsing, vault I/O, link graphs, task extraction, search, and metadata management. It is consumed via napi-rs bindings (`vaultiel-node`), a TypeScript Obsidian adapter (`vaultiel-obsidian`), and a standalone CLI crate (`vaultiel-cli`) that builds the `vaultiel` binary (~33 subcommands for read/parse/graph/write/metadata operations).
 
 ## Repository Structure
 
@@ -33,8 +33,9 @@ vaultiel/
 │   └── src/
 │       ├── main.rs       # Clap CLI definition + dispatch
 │       └── commands/     # read.rs, parse.rs, graph.rs, write.rs, meta.rs
-├── vaultiel-node/        # @vaultiel/node (napi-rs bindings for Node.js)
-└── vaultiel-obsidian/    # @vaultiel/obsidian (TypeScript, Obsidian APIs)
+├── vaultiel-node/            # @vaultiel/node (napi-rs bindings for Node.js)
+├── vaultiel-node-commands/   # TypeScript command layer over the node bindings (was vaultiel-cli)
+└── vaultiel-obsidian/        # @vaultiel/obsidian (TypeScript, Obsidian APIs)
 ```
 
 ## Task System
