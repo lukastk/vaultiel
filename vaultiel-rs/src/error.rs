@@ -12,6 +12,9 @@ pub enum VaultError {
     #[error("Note already exists: {0}")]
     NoteAlreadyExists(PathBuf),
 
+    #[error("Illegal character {ch:?} in note path: {path} (filename components must not contain control characters or any of < > : \" \\ | ? *)")]
+    IllegalFilename { path: PathBuf, ch: char },
+
     #[error("Ambiguous resolution: {count} notes match '{query}'")]
     AmbiguousResolution {
         query: String,

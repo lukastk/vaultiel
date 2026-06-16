@@ -4,7 +4,34 @@ use crate::error::{Result, VaultError};
 use crate::note::{Note, NoteInfo};
 use crate::search::{evaluate_note, parse_query, SearchQuery, SearchResult};
 use glob::glob;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+
+/// Characters that are illegal inside a single filename component on at least
+/// one of the target filesystems (macOS / Android FAT-exFAT / Linux / Windows).
+/// `/` is the path separator and is therefore handled by component splitting.
+const ILLEGAL_FILENAME_CHARS: &[char] = &['<', '>', ':', '"', '\\', '|', '?', '*'];
+
+/// Validate that every component of a note path is a legal filename: no control
+/// characters and none of the cross-platform-illegal punctuation. This is a loud
+/// defense-in-depth guard — callers are expected to convert illegal characters
+/// into safe look-alikes *before* building the path, so reaching here with an
+/// illegal character means a sanitization site was missed and we fail loudly
+/// rather than writing a corrupt or unreachable file.
+fn validate_note_path(relative_path: &Path) -> Result<()> {
+    for component in relative_path.components() {
+        if let Component::Normal(os) = component {
+            for ch in os.to_string_lossy().chars() {
+                if ch.is_control() || ILLEGAL_FILENAME_CHARS.contains(&ch) {
+                    return Err(VaultError::IllegalFilename {
+                        path: relative_path.to_path_buf(),
+                        ch,
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Represents an Obsidian vault.
 #[derive(Debug, Clone)]
@@ -60,6 +87,7 @@ impl Vault {
 
     /// Create a new note.
     pub fn create_note(&self, relative_path: &Path, content: &str) -> Result<Note> {
+        validate_note_path(relative_path)?;
         if self.note_exists(relative_path) {
             return Err(VaultError::NoteAlreadyExists(relative_path.to_path_buf()));
         }
@@ -92,6 +120,7 @@ impl Vault {
 
     /// Rename a note.
     pub fn rename_note(&self, from: &Path, to: &Path) -> Result<()> {
+        validate_note_path(to)?;
         if !self.note_exists(from) {
             return Err(VaultError::NoteNotFound(from.to_path_buf()));
         }
@@ -319,6 +348,48 @@ mod tests {
 
         let result = vault.create_note(&path, "Second");
         assert!(matches!(result, Err(VaultError::NoteAlreadyExists(_))));
+    }
+
+    #[test]
+    fn test_create_note_with_illegal_char_fails_loudly() {
+        let (_dir, vault) = setup_test_vault();
+
+        for bad in ["What?.md", "3:00.md", "a*b.md", "mod/Foo|Bar.md", "say \"hi\".md"] {
+            let path = PathBuf::from(bad);
+            let result = vault.create_note(&path, "x");
+            assert!(
+                matches!(result, Err(VaultError::IllegalFilename { .. })),
+                "expected IllegalFilename for {bad:?}, got {result:?}"
+            );
+            assert!(!vault.note_exists(&path), "must not write the file for {bad:?}");
+        }
+    }
+
+    #[test]
+    fn test_create_note_allows_lookalikes_and_unicode() {
+        let (_dir, vault) = setup_test_vault();
+
+        // Look-alike glyphs (∕ ： ❓ ｜) and other Unicode are valid filename chars.
+        let path = PathBuf::from("mod/Meeting w∕ Bob： 3pm❓.md");
+        vault.create_note(&path, "ok").unwrap();
+        assert!(vault.note_exists(&path));
+
+        let unicode = PathBuf::from("メモ 🎉.md");
+        vault.create_note(&unicode, "ok").unwrap();
+        assert!(vault.note_exists(&unicode));
+    }
+
+    #[test]
+    fn test_rename_note_to_illegal_path_fails_loudly() {
+        let (_dir, vault) = setup_test_vault();
+
+        let from = PathBuf::from("ok.md");
+        vault.create_note(&from, "x").unwrap();
+
+        let result = vault.rename_note(&from, &PathBuf::from("bad?.md"));
+        assert!(matches!(result, Err(VaultError::IllegalFilename { .. })));
+        // Original must be untouched.
+        assert!(vault.note_exists(&from));
     }
 
     #[test]
