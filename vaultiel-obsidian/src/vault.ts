@@ -8,10 +8,13 @@
 import {
   App,
   TFile,
+  parseYaml,
+  stringifyYaml,
   type LinkCache,
   type EmbedCache,
 } from "obsidian";
 import picomatch from "picomatch";
+import { editFrontmatterText, type YamlCodec } from "./frontmatter-edit.js";
 
 import type {
   Link,
@@ -499,6 +502,28 @@ export class Vault {
     await this.app.fileManager.processFrontMatter(file, (fm) => {
       fm[key] = value;
     });
+  }
+
+  /**
+   * Atomic, position-INDEPENDENT frontmatter edit. Unlike `modifyFrontmatter`
+   * (which relies on `processFrontMatter` splicing at the metadataCache's
+   * frontmatter position — a value that LAGS after a write and, under rapid
+   * successive writes, splices at a stale position → DUPLICATED keys / invalid
+   * YAML), this reads the CURRENT file text inside `app.vault.process`, finds the
+   * block by an anchored raw scan, de-duplicates keys (healing prior corruption),
+   * and re-serializes via Obsidian's own YAML. `mutate` receives the fresh
+   * frontmatter object and returns whether it changed (false → file untouched).
+   *
+   * Use this for write paths that issue rapid successive frontmatter writes
+   * (e.g. the ticket sync). `mutate` MUST be synchronous + side-effect-free.
+   */
+  async modifyFrontmatterWith(
+    path: string,
+    mutate: (fm: Record<string, unknown>) => boolean,
+  ): Promise<void> {
+    const file = getFile(this.app, path);
+    const codec: YamlCodec = { parse: parseYaml, stringify: stringifyYaml };
+    await this.app.vault.process(file, (data) => editFrontmatterText(data, mutate, codec));
   }
 
   /** Append content to a note. */
