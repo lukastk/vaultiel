@@ -492,15 +492,24 @@ export class Vault {
     await this.app.vault.process(file, () => content);
   }
 
-  /** Modify a frontmatter field. */
+  /**
+   * Modify a single frontmatter field. Delegates to the atomic, position-
+   * INDEPENDENT writer (`modifyFrontmatterWith`) rather than `processFrontMatter`:
+   * processFrontMatter splices at the metadataCache's frontmatter position, which
+   * LAGS after a write, so two writes to the same note in close succession (e.g. a
+   * command that sets start-date, end-date, then status) could splice at a stale
+   * position and DUPLICATE keys → invalid YAML. The atomic path reads the current
+   * file text, so this whole class of corruption is impossible for every caller
+   * (and it heals an already-corrupted block). Same observable contract as before.
+   */
   async modifyFrontmatter(
     path: string,
     key: string,
     value: unknown,
   ): Promise<void> {
-    const file = getFile(this.app, path);
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.modifyFrontmatterWith(path, (fm) => {
       fm[key] = value;
+      return true;
     });
   }
 
