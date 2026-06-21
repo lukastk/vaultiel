@@ -44,7 +44,7 @@ interface BlockInfo {
 }
 
 /** Locate a leading frontmatter block by an anchored raw scan (no cached position). */
-function findFrontmatter(text: string): BlockInfo | null {
+export function findFrontmatter(text: string): BlockInfo | null {
   // The opening fence must be the very first line: "---" + optional trailing
   // spaces + EOL. (Not "----", not "--- x".)
   const open = /^---[ \t]*(\r?\n)/.exec(text);

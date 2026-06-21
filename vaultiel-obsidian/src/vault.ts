@@ -14,7 +14,7 @@ import {
   type EmbedCache,
 } from "obsidian";
 import picomatch from "picomatch";
-import { editFrontmatterText, type YamlCodec } from "./frontmatter-edit.js";
+import { editFrontmatterText, findFrontmatter, type YamlCodec } from "./frontmatter-edit.js";
 
 import type {
   Link,
@@ -117,6 +117,41 @@ export class Vault {
     // Strip the "position" key that Obsidian adds internally
     const { position: _, ...fm } = cache.frontmatter;
     return JSON.stringify(fm);
+  }
+
+  /**
+   * Return the YAML parse-error message if the note has a frontmatter block that
+   * Obsidian could not parse (syntax error, duplicate keys, bad indentation, …),
+   * or `null` when frontmatter is absent, empty, comment-only, or valid.
+   *
+   * Obsidian's metadataCache exposes no parse-error signal: a malformed block and
+   * an absent one both yield `frontmatter == null`. We distinguish them with the
+   * `sections` array — a frontmatter block (well-formed or not) always produces a
+   * leading `"yaml"` section — and, only in that ambiguous case, re-parse the raw
+   * block ourselves. `parseYaml` (eemeli/yaml, uniqueKeys:true) throws on exactly
+   * the malformed shapes; an empty/comment/null/scalar block parses without error
+   * and is not flagged. The block is NOT de-duplicated first (unlike the write
+   * path) — duplicate keys are a malformation we want to report, not heal.
+   */
+  async getFrontmatterError(path: string): Promise<string | null> {
+    const file = getFile(this.app, path);
+    const cache = this.app.metadataCache.getFileCache(file);
+    if (cache?.frontmatter) return null; // parsed cleanly → valid
+    if (cache?.sections?.[0]?.type !== "yaml") return null; // no frontmatter block
+
+    // A yaml section exists but produced no frontmatter object: empty, comment-
+    // only, or malformed. Only here do we pay for a content read.
+    const content = await this.app.vault.cachedRead(file);
+    const info = findFrontmatter(content);
+    if (!info) return null;
+    const block = content.slice(info.contentStart, info.contentEnd);
+    if (block.trim() === "") return null; // empty frontmatter is valid
+    try {
+      parseYaml(block);
+      return null; // parsed (mapping/scalar/null) without error → not malformed
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
   }
 
   /** Parse links from a note (using metadataCache). */
