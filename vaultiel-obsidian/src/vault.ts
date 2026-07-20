@@ -498,11 +498,19 @@ export class Vault {
     await this.app.vault.trash(file, false);
   }
 
-  /** Rename a note (without link propagation). */
+  /**
+   * Rename a note, propagating internal-link updates.
+   *
+   * Uses `fileManager.renameFile` (Obsidian's own rename path) rather than
+   * `vault.rename`, so every `[[wikilink]]` pointing at the note is rewritten
+   * to the new path — exactly as when the user renames a note in the UI
+   * (subject to the "Automatically update internal links" setting). Plain
+   * `vault.rename` moves the file but leaves dangling links behind.
+   */
   async renameNote(from: string, to: string): Promise<void> {
     const file = getFile(this.app, from);
     const normalizedTo = normalizePath(to);
-    await this.app.vault.rename(file, normalizedTo);
+    await this.app.fileManager.renameFile(file, normalizedTo);
   }
 
   /** Set the body content of a note (preserves frontmatter). */
