@@ -36,9 +36,25 @@ vaultiel/
 ├── vaultiel-node/            # @vaultiel/node (napi-rs bindings for Node.js)
 ├── vaultiel-node-commands/   # TypeScript command layer over the node bindings (was vaultiel-cli)
 ├── vaultiel-obsidian/        # @vaultiel/obsidian (TypeScript, Obsidian APIs)
-├── skills/                   # vaultiel-cli usage skill (Pi/Claude)
 └── PROJECT_PLAN.md, PROJECT_SPEC.md, phase_plans/  # Planning / spec docs
 ```
+
+## `vaultiel-obsidian`: go through Obsidian's own APIs, not the raw vault
+
+Inside Obsidian, the adapter must produce **exactly what a UI action would**, because
+callers (mysystem, obako) assume a write is indistinguishable from the user doing it by
+hand. Two rules that came out of real corruption/regression bugs:
+
+- **`renameNote` uses `app.fileManager.renameFile`, never `app.vault.rename`.** The
+  latter moves the file but leaves every inbound `[[wikilink]]` dangling; `fileManager`
+  is Obsidian's own rename path and rewrites every link (plain and aliased) pointing at
+  the note, subject to the user's "Automatically update internal links" setting. This
+  surfaced as a mysystem bug: dragging a date-range planner in NoteTimeline renames its
+  note (the range is in the filename), and links to it silently broke.
+- **Frontmatter writes are atomic and position-independent** (`Vault.modifyFrontmatterWith`)
+  for *all* callers — the non-atomic path was a whole class of corruption.
+  `Vault.getFrontmatterError` detects malformed frontmatter, and note writes carry a loud
+  illegal-filename guard.
 
 ## Task System
 
