@@ -27,11 +27,17 @@ export const vaultSubcommands: CLISubcommand[] = [
   },
 
   {
-    name: "validate",
-    description: "Validate frontmatter parsing",
+    // NOT a note-validity check: vaultiel is the I/O layer and has no concept of
+    // note types, required fields, or stage. It only asserts that the YAML block
+    // parses. Named `validate` until 2026-08-11, where the bare name plus an
+    // "All N notes valid" success message read as a full validity check and gave
+    // false reassurance (a note missing a mandatory field passed). The note-type
+    // aware check is `validate`, in obako-node.
+    name: "validate-frontmatter",
+    description: "Check that each note's frontmatter parses as YAML",
     group: "Read",
     args: [
-      { name: "note", description: "Note path (optional — validates all if omitted)", required: false },
+      { name: "note", description: "Note path (optional — checks all if omitted)", required: false },
     ],
     options: [
       {
@@ -65,7 +71,7 @@ export const vaultSubcommands: CLISubcommand[] = [
       }
 
       if (errors.length === 0) {
-        return { text: `All ${paths.length} notes valid`, exitCode: 0 };
+        return { text: `All ${paths.length} notes have parseable frontmatter`, exitCode: 0 };
       }
 
       return { text: errors.join("\n"), exitCode: 1 };
