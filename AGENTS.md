@@ -81,8 +81,17 @@ Run tests:
 cargo test -p vaultiel                   # All Rust tests
 cargo test -p vaultiel parser            # Parser tests only
 cargo check -p vaultiel-node             # Check node bindings compile
+cargo build -p vaultiel-cli              # Build the CLI (the crate has no tests)
 cd vaultiel-obsidian && npx vitest run   # TypeScript tests
 ```
+
+**The `vaultiel` on PATH is an installed copy, not the workspace build.** It lives at
+`~/.local/bin/vaultiel`, installed by `mysystem/dev_scripts/initialise.sh` with
+`cargo install --path vaultiel-cli --root ~/.local --force`. After changing the CLI (or the
+core crate it links), reinstall with that same command, or `vaultiel` keeps running the old
+binary. `initialise.sh` skips the install when `~/.local/.vaultiel-commit` already matches
+this repo's HEAD, so uncommitted changes are never picked up by re-running it. Every
+subcommand requires `--vault <path>`.
 
 ## Implementation Guidance
 
