@@ -99,10 +99,25 @@ export interface VaultielMetadata {
 }
 
 /** A link reference in the vault graph. */
+/**
+ * A link reference. Mirrors the Rust side's flattened `Link` + location, so a
+ * consumer reads the same fields in both runtimes.
+ *
+ * **`target` is the link's target; `context` is WHERE the link sits** ("body",
+ * "frontmatter:<key>"). `context` used to carry `displayText || link` in the
+ * body branches and a location string in the frontmatter branch — inconsistent
+ * within this file, and the opposite of the Rust side — so a consumer resolving
+ * `context` as a path got a display alias, a target, or the word "body"
+ * depending on which branch produced the row.
+ */
 export interface LinkRef {
-  from: string;
+  /** Source note path. */
+  from?: string;
+  /** The link target as written, without `#heading`/`#^block` or alias. */
+  target: string;
   line: number;
-  context: string;
+  /** Where the link sits — "body" or "frontmatter:<key>". */
+  context: string | Record<string, unknown>;
   alias?: string;
   heading?: string;
   blockId?: string;

@@ -246,10 +246,9 @@ export class Vault {
           refs.push({
             from: sourcePath,
             line: lc.position.start.line + 1,
-            context: lc.displayText || lc.link,
+            ...parseObsidianLink(lc.link),
+            context: "body",
             alias: lc.displayText !== lc.link ? lc.displayText : undefined,
-            heading: undefined,
-            blockId: undefined,
             embed: false,
           });
         }
@@ -278,10 +277,9 @@ export class Vault {
           refs.push({
             from: sourcePath,
             line: lc.position.start.line + 1,
-            context: lc.displayText || lc.link,
+            ...parseObsidianLink(lc.link),
+            context: "body",
             alias: lc.displayText !== lc.link ? lc.displayText : undefined,
-            heading: undefined,
-            blockId: undefined,
             embed: false,
           });
         }
@@ -304,10 +302,9 @@ export class Vault {
         refs.push({
           from: otherFile.path,
           line: 0, // frontmatter, no specific line
+          ...parseObsidianLink(fl.link),
           context: `frontmatter:${fmKey}`,
           alias: fl.displayText !== fl.link ? fl.displayText : undefined,
-          heading: undefined,
-          blockId: undefined,
           embed: false,
         });
       }
@@ -330,10 +327,9 @@ export class Vault {
         refs.push({
           from: file.path,
           line: lc.position.start.line + 1,
-          context: lc.displayText || lc.link,
+          ...parseObsidianLink(lc.link),
+          context: "body",
           alias: lc.displayText !== lc.link ? lc.displayText : undefined,
-          heading: undefined,
-          blockId: undefined,
           embed: false,
         });
       }
@@ -345,10 +341,9 @@ export class Vault {
         refs.push({
           from: file.path,
           line: ec.position.start.line + 1,
-          context: ec.displayText || ec.link,
+          ...parseObsidianLink(ec.link),
+          context: "body",
           alias: ec.displayText !== ec.link ? ec.displayText : undefined,
-          heading: undefined,
-          blockId: undefined,
           embed: true,
         });
       }
@@ -361,10 +356,9 @@ export class Vault {
         refs.push({
           from: file.path,
           line: 0,
+          ...parseObsidianLink(fl.link),
           context: `frontmatter:${fmKey}`,
           alias: fl.displayText !== fl.link ? fl.displayText : undefined,
-          heading: undefined,
-          blockId: undefined,
           embed: false,
         });
       }

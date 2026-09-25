@@ -98,8 +98,19 @@ pub struct JsVaultielMetadata {
 #[napi(object)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsLinkRef {
+    /// Source note path. For an outgoing link this is the note being asked about.
     pub from: String,
+    /// The link's TARGET, as written, without `#heading`/`#^block` or alias.
+    ///
+    /// This was missing from the binding entirely, so a Node consumer could not
+    /// see what a link pointed AT — only where it sat (`context`) and how it was
+    /// displayed (`alias`). `ObakoVault.getOutgoingNotes` consequently tried to
+    /// resolve `context` (the string "body") as a note path, inside a `catch`
+    /// that swallowed the failure, and reported zero outgoing links for every
+    /// note in the vault.
+    pub target: String,
     pub line: u32,
+    /// Where the link sits — "body", "frontmatter:<key>", "inline:<key>", "task".
     pub context: String,
     pub alias: Option<String>,
     pub heading: Option<String>,
@@ -901,6 +912,7 @@ impl JsVault {
             .iter()
             .map(|l| JsLinkRef {
                 from: l.from.to_string_lossy().to_string(),
+                target: l.link.target.clone(),
                 line: l.link.line as u32,
                 context: l.context.as_string(),
                 alias: l.link.alias.clone(),
@@ -924,6 +936,7 @@ impl JsVault {
             .iter()
             .map(|l| JsLinkRef {
                 from: note_path.to_string_lossy().to_string(),
+                target: l.link.target.clone(),
                 line: l.link.line as u32,
                 context: l.context.as_string(),
                 alias: l.link.alias.clone(),
