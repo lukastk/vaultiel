@@ -56,6 +56,16 @@ hand. Two rules that came out of real corruption/regression bugs:
   `Vault.getFrontmatterError` detects malformed frontmatter, and note writes carry a loud
   illegal-filename guard.
 
+## `vaultiel-node-commands`: the TypeScript subcommand layer
+
+`vaultiel-node-commands` is the subcommand layer that obako-node (and therefore the
+mysystem CLI) dispatches vault subcommands through. It is separate from the Rust
+`vaultiel-cli` binary and has subcommands the binary lacks (`validate-frontmatter`,
+`inline-properties`, `set-property`, `remove-property`, `rename-property`; see
+`src/vault-subcommands.ts`), so a subcommand change usually needs to land in both.
+Build and type-check with `npm run build` / `npm run check` inside
+`vaultiel-node-commands/`; it has no test script.
+
 ## Task System
 
 Tasks use a **generic emoji metadata model**. All metadata fields are user-defined via `TaskConfig`:
